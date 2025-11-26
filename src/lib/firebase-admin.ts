@@ -12,7 +12,7 @@ if (!getApps().length) {
       })
     })
   } catch (error) {
-    console.warn('Firebase Admin initialization failed:', error)
+    console.log('Firebase Admin hiba')
   }
 }
 

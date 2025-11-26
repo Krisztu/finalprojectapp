@@ -6,8 +6,11 @@ import { AuthProvider } from '@/contexts/AuthContext'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'GSZI APP - Nemes Tihamer Technikum',
-  description: 'Digitalis diak alkalmazas a Bekescsabai SZC Nemes Tihamer Technikum es Kollegium szamara',
+  title: 'Luminé - Oktatási Platform',
+  description: 'Modern oktatási platform diákok és tanárok számára',
+  icons: {
+    icon: '/favicon.svg',
+  },
 }
 
 export default function RootLayout({

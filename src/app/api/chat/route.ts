@@ -37,3 +37,20 @@ export async function GET() {
     return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 })
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get('id')
+    
+    if (!id) {
+      return NextResponse.json({ error: 'Message ID required' }, { status: 400 })
+    }
+    
+    await db.collection('chatMessages').doc(id).delete()
+    
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    return NextResponse.json({ error: 'Failed to delete message' }, { status: 500 })
+  }
+}

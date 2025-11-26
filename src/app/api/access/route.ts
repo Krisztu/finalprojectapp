@@ -78,7 +78,6 @@ export async function POST(request: NextRequest) {
       }
     }
   } catch (error) {
-    console.error('Access API error:', error)
     return NextResponse.json({ 
       success: false, 
       error: 'Szerver hiba' 

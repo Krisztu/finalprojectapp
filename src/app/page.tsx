@@ -4,10 +4,11 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Button } from '@/components/ui/button'
 import { GraduationCap } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
-import { demoUsers } from '@/lib/demo-users'
+
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -17,12 +18,21 @@ export default function LoginPage() {
   const [isLogin, setIsLogin] = useState(true)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [darkMode, setDarkMode] = useState(false)
   const { signIn, signUp, user, error: authError } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
     if (user) {
       router.push('/dashboard')
+    }
+    
+    // Load dark mode from localStorage
+    const savedDarkMode = localStorage.getItem('darkMode')
+    if (savedDarkMode) {
+      const isDark = savedDarkMode === 'true'
+      setDarkMode(isDark)
+      document.documentElement.classList.toggle('dark', isDark)
     }
   }, [user, router])
 
@@ -49,19 +59,38 @@ export default function LoginPage() {
         const userCredential = await signUp(email, password)
         if (userCredential.user) {
           try {
-            await fetch('/api/users', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
+            try {
+              const availableClasses = ['12.A', '12.B']
+              const assignedClass = availableClasses[Math.floor(Math.random() * availableClasses.length)]
+              
+              const userData = {
                 uid: userCredential.user.uid,
                 email: email,
                 fullName: fullName,
                 studentId: studentId,
-                role: 'student'
+                role: 'student',
+                class: assignedClass
+              }
+              
+
+              
+              const response = await fetch('/api/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(userData)
               })
-            })
+              
+              if (response.ok) {
+                const result = await response.json()
+                alert(`Regisztráció sikeres!\nOsztály: ${assignedClass}\n${result.lessonsAdded || ''}`)
+              } else {
+                alert('Felhasználó létrehozása sikertelen')
+              }
+            } catch (apiError) {
+              alert('Felhasználó mentése sikertelen, de a fiók létrejött')
+            }
           } catch (apiError) {
-            console.log('API save failed, but user created')
+            // API mentés sikertelen
           }
         }
       }
@@ -72,64 +101,44 @@ export default function LoginPage() {
     }
   }
 
-  const handleDemoLogin = async (role: string) => {
-    const user = demoUsers[role as keyof typeof demoUsers]
-    if (user) {
-      setLoading(true)
-      setError('')
-      try {
-        await signIn(user.email, user.password)
-      } catch (error: any) {
-        try {
-          const userCredential = await signUp(user.email, user.password)
-          if (userCredential.user) {
-            try {
-              await fetch('/api/users', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  uid: userCredential.user.uid,
-                  email: user.email,
-                  fullName: user.name,
-                  studentId: role === 'student' ? '12345678901' : undefined,
-                  role: user.role
-                })
-              })
-            } catch (apiError) {
-              console.log('API save failed, but user created')
-            }
-          }
-        } catch (createError: any) {
-          console.log('Demo user creation failed')
-        }
-      } finally {
-        setLoading(false)
-      }
-    }
-  }
+
 
   if (user) return null
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-8">
-        <div className="text-center">
-          <GraduationCap className="mx-auto h-12 w-12 text-blue-600" />
-          <h1 className="mt-4 text-3xl font-bold text-gray-900">GSZI APP</h1>
-          <p className="mt-2 text-gray-600">Békéscsabai SZC Nemes Tihamér Technikum</p>
-        </div>
+    <div className={`min-h-screen transition-colors ${darkMode ? 'dark' : ''}`} style={{background: darkMode ? 'linear-gradient(135deg, #1f2937, #111827)' : 'linear-gradient(135deg, #eff6ff, #e0e7ff)'}}>
+      <div className="flex items-center justify-center min-h-screen p-4">
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={() => {
+            const newDarkMode = !darkMode
+            setDarkMode(newDarkMode)
+            document.documentElement.classList.toggle('dark', newDarkMode)
+            localStorage.setItem('darkMode', newDarkMode.toString())
+          }}
+          className="fixed top-4 right-4 dark:border-gray-600 dark:text-gray-300 dark:bg-gray-800"
+        >
+          {darkMode ? '☀️' : '🌙'}
+        </Button>
+        <div className="w-full max-w-md space-y-8">
+          <div className="text-center">
+            <GraduationCap className="mx-auto h-12 w-12 text-blue-600" />
+            <h1 className="mt-4 text-3xl font-bold text-gray-900 dark:text-white">Luminé</h1>
+            <p className="mt-2 text-gray-600 dark:text-gray-300">Békéscsabai SZC Nemes Tihamér Technikum</p>
+          </div>
 
-        <Card>
+          <Card className="dark:bg-gray-800 dark:border-gray-700">
           <CardHeader>
-            <CardTitle>Fiók</CardTitle>
-            <CardDescription>Jelentkezz be vagy regisztrálj</CardDescription>
+            <CardTitle className="dark:text-white">Fiók</CardTitle>
+            <CardDescription className="dark:text-gray-300">Jelentkezz be vagy regisztrálj</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex w-full bg-gray-100 rounded-lg p-1 mb-6">
+            <div className="flex w-full bg-gray-100 dark:bg-gray-700 rounded-lg p-1 mb-6">
               <button 
                 type="button"
                 className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-                  isLogin ? 'bg-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                  isLogin ? 'bg-white dark:bg-gray-600 shadow-sm dark:text-white' : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
                 }`}
                 onClick={() => setIsLogin(true)}
               >
@@ -138,7 +147,7 @@ export default function LoginPage() {
               <button 
                 type="button"
                 className={`flex-1 py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-                  !isLogin ? 'bg-white shadow-sm' : 'text-gray-600 hover:text-gray-900'
+                  !isLogin ? 'bg-white dark:bg-gray-600 shadow-sm dark:text-white' : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
                 }`}
                 onClick={() => setIsLogin(false)}
               >
@@ -148,7 +157,7 @@ export default function LoginPage() {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email" className="dark:text-gray-200">Email</Label>
                 <Input
                   id="email"
                   type="email"
@@ -160,7 +169,7 @@ export default function LoginPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Jelszó</Label>
+                <Label htmlFor="password" className="dark:text-gray-200">Jelszó</Label>
                 <Input
                   id="password"
                   type="password"
@@ -175,7 +184,7 @@ export default function LoginPage() {
               {!isLogin && (
                 <>
                   <div className="space-y-2">
-                    <Label htmlFor="fullName">Teljes név</Label>
+                    <Label htmlFor="fullName" className="dark:text-gray-200">Teljes név</Label>
                     <Input
                       id="fullName"
                       type="text"
@@ -187,7 +196,7 @@ export default function LoginPage() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="studentId">Oktatási azonosító</Label>
+                    <Label htmlFor="studentId" className="dark:text-gray-200">Oktatási azonosító</Label>
                     <Input
                       id="studentId"
                       type="text"
@@ -201,58 +210,25 @@ export default function LoginPage() {
                 </>
               )}
               {(error || authError) && (
-                <div className="text-red-600 text-sm text-center">
+                <div className="text-red-600 dark:text-red-400 text-sm text-center">
                   {error || authError}
                 </div>
               )}
               <button 
                 type="submit"
                 disabled={loading}
-                className="w-full h-11 rounded-md px-8 bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium mb-4"
+                className="w-full h-11 rounded-md px-8 bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium mb-4"
               >
                 {loading ? (isLogin ? 'Bejelentkezés...' : 'Regisztráció...') : (isLogin ? 'Bejelentkezés' : 'Regisztráció')}
               </button>
             </form>
             
-            <div className="border-t pt-4">
-              <p className="text-sm text-gray-600 mb-3 text-center">Teszt fiókok:</p>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleDemoLogin('student')}
-                  disabled={loading}
-                  className="bg-gray-500 text-white py-2 px-3 rounded text-sm hover:bg-gray-600 disabled:opacity-50"
-                >
-                  Diák
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDemoLogin('teacher')}
-                  disabled={loading}
-                  className="bg-gray-500 text-white py-2 px-3 rounded text-sm hover:bg-gray-600 disabled:opacity-50"
-                >
-                  Tanár
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDemoLogin('admin')}
-                  disabled={loading}
-                  className="bg-gray-500 text-white py-2 px-3 rounded text-sm hover:bg-gray-600 disabled:opacity-50"
-                >
-                  Admin
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDemoLogin('dj')}
-                  disabled={loading}
-                  className="bg-gray-500 text-white py-2 px-3 rounded text-sm hover:bg-gray-600 disabled:opacity-50"
-                >
-                  DJ
-                </button>
-              </div>
-            </div>
+
+            
+
           </CardContent>
-        </Card>
+          </Card>
+        </div>
       </div>
     </div>
   )

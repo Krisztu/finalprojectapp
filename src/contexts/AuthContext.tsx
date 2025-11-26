@@ -21,13 +21,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    console.log('AuthProvider: Setting up auth state listener')
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      console.log('AuthProvider: Auth state changed', user ? 'User logged in' : 'User logged out')
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          await user.getIdToken(true)
+          console.log('Bejelentkezés sikeres')
+        } catch (error) {
+          console.log('Token frissítés hiba')
+        }
+      } else {
+        console.log('Kijelentkezés')
+      }
       setUser(user)
       setLoading(false)
     }, (error) => {
-      console.error('AuthProvider: Auth state change error', error)
       setError(error.message)
       setLoading(false)
     })
@@ -36,12 +43,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     try {
-      console.log('AuthProvider: Attempting sign in for', email)
       setError(null)
       const result = await signInWithEmailAndPassword(auth, email, password)
-      console.log('AuthProvider: Sign in successful', result.user.uid)
+      await result.user.getIdToken(true)
     } catch (error: any) {
-      console.error('AuthProvider: Sign in error', error)
       setError(error.message)
       throw error
     }
@@ -49,13 +54,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp = async (email: string, password: string) => {
     try {
-      console.log('AuthProvider: Attempting sign up for', email)
       setError(null)
       const result = await createUserWithEmailAndPassword(auth, email, password)
-      console.log('AuthProvider: Sign up successful', result.user.uid)
       return result
     } catch (error: any) {
-      console.error('AuthProvider: Sign up error', error)
       setError(error.message)
       throw error
     }
@@ -63,12 +65,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
-      console.log('AuthProvider: Attempting logout')
       setError(null)
       await signOut(auth)
-      console.log('AuthProvider: Logout successful')
     } catch (error: any) {
-      console.error('AuthProvider: Logout error', error)
       setError(error.message)
       throw error
     }
