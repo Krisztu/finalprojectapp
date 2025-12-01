@@ -77,6 +77,9 @@ export default function Dashboard() {
   const [excuseForm, setExcuseForm] = useState({ absenceIds: [] as string[], excuseType: '', description: '' })
   const [showExcuseModal, setShowExcuseModal] = useState(false)
   const [selectedAbsences, setSelectedAbsences] = useState<any[]>([])
+  const [teacherSearch, setTeacherSearch] = useState('')
+  const [studentSearch, setStudentSearch] = useState('')
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -116,7 +119,7 @@ export default function Dashboard() {
       loadLessons(currentUser)
       loadHomework()
       loadAttendance()
-      if (userRole === 'classTeacher') {
+      if (currentUser.role === 'homeroom_teacher' || currentUser.role === 'student' || currentUser.role === 'dj') {
         loadExcuses()
       }
     }
@@ -135,18 +138,17 @@ export default function Dashboard() {
         const apiUser = users.find((u: any) => u.email === email)
         if (apiUser) {
           userData = apiUser
-          setUserRole(apiUser.role)
-          setStudent({ Name: apiUser.fullName || apiUser.name, Class: apiUser.class })
-          console.log('Felhasználó betöltve:', apiUser.role)
-        } else {
-          // Ellenőrizzük, hogy osztályfőnök-e
-          if (apiUser.role === 'teacher' && (apiUser.classTeacher === '12.A' || apiUser.classTeacher === '12.B')) {
-            setUserRole('classTeacher')
-            console.log('Osztályfőnök szerepkör:', apiUser.classTeacher)
+          // homeroom_teacher szerepkört is teacher-ként kezeljük
+          if (apiUser.role === 'homeroom_teacher') {
+            setUserRole('teacher')
           } else {
-            setUserRole('student')
-            console.log('Alapértelmezett szerepkör: student')
+            setUserRole(apiUser.role)
           }
+          setStudent({ Name: apiUser.fullName || apiUser.name, Class: apiUser.class })
+          console.log('Felhasználó betöltve:', apiUser.role, '-> userRole:', apiUser.role === 'homeroom_teacher' ? 'teacher' : apiUser.role)
+        } else {
+          setUserRole('student')
+          console.log('Alapértelmezett szerepkör: student')
         }
       }
 
@@ -160,11 +162,12 @@ export default function Dashboard() {
       // Load grades from database
       await loadGrades(userData)
 
-      if (userData?.role === 'admin' || userData?.role === 'teacher') {
+      if (userData?.role === 'admin' || userData?.role === 'teacher' || userData?.role === 'homeroom_teacher') {
         await loadAllUsers()
         console.log('Admin/tanár adatok betöltve')
 
-        if (userData?.role === 'teacher') {
+        if (userData?.role === 'teacher' || userData?.role === 'homeroom_teacher') {
+          // Betöltjük az ÖSSZES órát a profilhoz és jegyadáshoz
           const allLessonsResponse = await fetch('/api/lessons')
           if (allLessonsResponse.ok) {
             const allLessonsData = await allLessonsResponse.json()
@@ -178,8 +181,8 @@ export default function Dashboard() {
               status: 'normal',
               userId: lesson.userId
             }))
-              ; (window as any).allLessonsForProfile = formattedAllLessons
-            console.log('Tanári órák betöltve')
+            ; (window as any).allLessonsForProfile = formattedAllLessons
+            console.log('Tanári órák betöltve:', formattedAllLessons.length)
           }
         }
       }
@@ -343,6 +346,7 @@ export default function Dashboard() {
         }
 
         if (userId) {
+          // KRITIKUS: Tanárok esetében CSAK a saját userId-jükkel szűrünk
           url += `?userId=${encodeURIComponent(userId)}`
         } else {
           // Ha nincs userId, próbáljuk email alapján
@@ -539,8 +543,8 @@ export default function Dashboard() {
     try {
       let url = '/api/excuses'
 
-      if (userRole === 'classTeacher') {
-        url += `?classTeacher=${encodeURIComponent(currentUser.classTeacher)}`
+      if (currentUser.role === 'homeroom_teacher') {
+        url += `?classTeacher=${encodeURIComponent(currentUser.class)}`
       } else if (currentUser.role === 'student' || currentUser.role === 'dj') {
         url += `?studentId=${encodeURIComponent(currentUser.id || user?.uid)}`
       }
@@ -569,11 +573,14 @@ export default function Dashboard() {
           setHomework(data.homework || [])
           setHomeworkSubmissions(data.submissions || {})
         }
-      } else if (currentUser.role === 'teacher') {
-        url += `?teacherId=${encodeURIComponent(currentUser.id || user?.uid)}`
+      } else if (currentUser.role === 'teacher' || currentUser.role === 'homeroom_teacher') {
+        const teacherId = currentUser.id || user?.uid || user?.email
+        url += `?teacherId=${encodeURIComponent(teacherId)}`
+        console.log('Tanár ID:', teacherId)
         const response = await fetch(url)
         if (response.ok) {
           const data = await response.json()
+          console.log('Tanári házi feladatok betöltve:', data.length, 'db')
           setHomework(data)
         }
       }
@@ -590,6 +597,8 @@ export default function Dashboard() {
 
     try {
       const lessonId = `${lesson.Day}_${lesson.StartTime}_${lesson.Class}`
+      const teacherId = currentUser?.id || user?.uid || user?.email
+      console.log('Házi feladat létrehozása teacherId:', teacherId)
       const response = await fetch('/api/homework', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -597,7 +606,7 @@ export default function Dashboard() {
           title: homeworkForm.title,
           description: homeworkForm.description,
           dueDate: homeworkForm.dueDate,
-          teacherId: currentUser?.id || user?.uid,
+          teacherId: teacherId,
           teacherName: currentUser?.fullName || currentUser?.name,
           subject: lesson.Subject,
           className: lesson.Class,
@@ -760,73 +769,116 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen transition-colors pb-20">
-      <header className="sticky top-4 z-50 mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="glass rounded-2xl mt-4 px-6 py-3 flex justify-between items-center">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
-              <span className="text-white font-bold text-lg">L</span>
+      <header className="sticky top-0 z-50 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
+                <span className="text-white font-bold text-sm sm:text-lg">L</span>
+              </div>
+              <h1 className="text-lg sm:text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">Luminé</h1>
             </div>
-            <h1 className="text-2xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-400">Luminé</h1>
-          </div>
-          <div className="flex items-center space-x-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => {
-                const newDarkMode = !darkMode
-                setDarkMode(newDarkMode)
-                document.documentElement.classList.toggle('dark', newDarkMode)
-                if (cookieConsent) {
-                  localStorage.setItem('darkMode', newDarkMode.toString())
-                }
-              }}
-              className="rounded-full hover:bg-black/5 dark:hover:bg-white/10"
-            >
-              {darkMode ? '☀️' : '🌙'}
-            </Button>
-            <div className="hidden md:flex flex-col items-end mr-2">
-              <span className="text-sm font-semibold text-gray-900 dark:text-white">
-                {currentUser?.name || currentUser?.fullName || user.email}
-              </span>
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                {userRole === 'dj' && 'DJ'}
-                {userRole === 'teacher' && 'Tanár'}
-                {userRole === 'admin' && 'Admin'}
-                {userRole === 'classTeacher' && 'Osztályfőnök'}
-                {userRole === 'student' && 'Diák'}
-              </span>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => {
+                  const newDarkMode = !darkMode
+                  setDarkMode(newDarkMode)
+                  document.documentElement.classList.toggle('dark', newDarkMode)
+                  if (cookieConsent) {
+                    localStorage.setItem('darkMode', newDarkMode.toString())
+                  }
+                }}
+                className="rounded-full hover:bg-black/5 dark:hover:bg-white/10 w-8 h-8 sm:w-10 sm:h-10"
+              >
+                <span className="text-lg">{darkMode ? '☀️' : '🌙'}</span>
+              </Button>
+              <div className="hidden md:flex flex-col items-end mr-2">
+                <span className="text-xs sm:text-sm font-semibold text-gray-900 dark:text-white">
+                  {currentUser?.name || currentUser?.fullName || user.email}
+                </span>
+                <span className="text-xs text-gray-600 dark:text-gray-400">
+                  {userRole === 'dj' && 'DJ'}
+                  {userRole === 'teacher' && 'Tanár'}
+                  {userRole === 'admin' && 'Admin'}
+                  {userRole === 'student' && 'Diák'}
+                </span>
+              </div>
+              <Button variant="destructive" size="sm" onClick={handleLogout} className="rounded-full shadow-md text-xs sm:text-sm px-2 sm:px-4">
+                <LogOut className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-2" />
+                <span className="hidden sm:inline">Kilépés</span>
+              </Button>
             </div>
-            <Button variant="destructive" size="sm" onClick={handleLogout} className="rounded-full shadow-md">
-              <LogOut className="h-4 w-4 mr-2" />
-              Kilépés
-            </Button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 py-3 sm:py-8">
         <Tabs defaultValue="dashboard" className="w-full">
-          <TabsList className={`grid w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm ${userRole === 'admin' ? 'grid-cols-7' :
-            userRole === 'teacher' ? 'grid-cols-9' :
-              userRole === 'classTeacher' ? 'grid-cols-10' : 'grid-cols-9'
-            }`}>
-            <TabsTrigger value="dashboard">Főoldal</TabsTrigger>
-            {userRole !== 'admin' && <TabsTrigger value="schedule">Órarend</TabsTrigger>}
-            {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="grades">Jegyek</TabsTrigger>}
-            {userRole === 'teacher' && <TabsTrigger value="teacher-grades">Jegyek kezelése</TabsTrigger>}
-            {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="absences">Mulasztások</TabsTrigger>}
-            {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="homework">Házi feladatok</TabsTrigger>}
-            {userRole === 'teacher' && <TabsTrigger value="teacher-absences">Mulasztások</TabsTrigger>}
-            {userRole === 'teacher' && <TabsTrigger value="teacher-homework">Házi feladatok</TabsTrigger>}
-            {userRole === 'classTeacher' && <TabsTrigger value="class-excuses">Igazolások</TabsTrigger>}
-            {userRole !== 'admin' && <TabsTrigger value="radio">Suli Rádió</TabsTrigger>}
-            <TabsTrigger value="chat">Üzenőfal</TabsTrigger>
-            {userRole !== 'teacher' && userRole !== 'admin' && <TabsTrigger value="qr">QR Kód</TabsTrigger>}
-            {userRole === 'admin' && <TabsTrigger value="admin-schedule">Órarend</TabsTrigger>}
-            {userRole === 'admin' && <TabsTrigger value="admin-grades">Jegyek</TabsTrigger>}
-            {userRole === 'admin' && <TabsTrigger value="admin-users">Felhasználók</TabsTrigger>}
-            <TabsTrigger value="profile">Profil</TabsTrigger>
+          {/* Desktop Navigation */}
+          <TabsList className="hidden md:flex overflow-x-auto w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-sm gap-1 p-2">
+            <TabsTrigger value="dashboard" className="text-sm whitespace-nowrap px-4">Főoldal</TabsTrigger>
+            {userRole !== 'admin' && <TabsTrigger value="schedule" className="text-sm whitespace-nowrap px-4">Órarend</TabsTrigger>}
+            {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="grades" className="text-sm whitespace-nowrap px-4">Jegyek</TabsTrigger>}
+            {userRole === 'teacher' && <TabsTrigger value="teacher-grades" className="text-sm whitespace-nowrap px-4">Jegyek</TabsTrigger>}
+            {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="absences" className="text-sm whitespace-nowrap px-4">Mulasztások</TabsTrigger>}
+            {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="homework" className="text-sm whitespace-nowrap px-4">Házi</TabsTrigger>}
+            {userRole === 'teacher' && <TabsTrigger value="teacher-absences" className="text-sm whitespace-nowrap px-4">Mulasztások</TabsTrigger>}
+            {userRole === 'teacher' && <TabsTrigger value="teacher-homework" className="text-sm whitespace-nowrap px-4">Házi</TabsTrigger>}
+            {(currentUser?.role === 'homeroom_teacher') && <TabsTrigger value="class-excuses" className="text-sm whitespace-nowrap px-4">Igazolások</TabsTrigger>}
+            {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="student-excuses" className="text-sm whitespace-nowrap px-4">Igazolás</TabsTrigger>}
+            {userRole !== 'admin' && <TabsTrigger value="radio" className="text-sm whitespace-nowrap px-4">Rádió</TabsTrigger>}
+            <TabsTrigger value="chat" className="text-sm whitespace-nowrap px-4">Chat</TabsTrigger>
+            {userRole !== 'teacher' && userRole !== 'admin' && <TabsTrigger value="qr" className="text-sm whitespace-nowrap px-4">QR</TabsTrigger>}
+            {userRole === 'admin' && <TabsTrigger value="admin-schedule" className="text-sm whitespace-nowrap px-4">Órarend</TabsTrigger>}
+            {userRole === 'admin' && <TabsTrigger value="admin-grades" className="text-sm whitespace-nowrap px-4">Jegyek</TabsTrigger>}
+            {userRole === 'admin' && <TabsTrigger value="admin-users" className="text-sm whitespace-nowrap px-4">Userek</TabsTrigger>}
+            <TabsTrigger value="profile" className="text-sm whitespace-nowrap px-4">Profil</TabsTrigger>
           </TabsList>
+
+          {/* Mobile Hamburger Button */}
+          <div className="md:hidden mb-4">
+            <Button
+              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+              className="w-full flex items-center justify-between bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-white hover:bg-gray-50 dark:hover:bg-gray-700"
+            >
+              <span className="flex items-center gap-2">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+                Menü
+              </span>
+              <svg className={`w-4 h-4 transition-transform ${mobileMenuOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </Button>
+          </div>
+
+          {/* Mobile Menu Dropdown */}
+          {mobileMenuOpen && (
+            <div className="md:hidden mb-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden">
+              <TabsList className="flex flex-col w-full bg-transparent gap-0 p-0">
+                <TabsTrigger value="dashboard" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-gray-100 dark:border-gray-700">🏠 Főoldal</TabsTrigger>
+                {userRole !== 'admin' && <TabsTrigger value="schedule" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-gray-100 dark:border-gray-700">📅 Órarend</TabsTrigger>}
+                {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="grades" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-gray-100 dark:border-gray-700">📊 Jegyek</TabsTrigger>}
+                {userRole === 'teacher' && <TabsTrigger value="teacher-grades" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-gray-100 dark:border-gray-700">📊 Jegyek</TabsTrigger>}
+                {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="absences" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-gray-100 dark:border-gray-700">📋 Mulasztások</TabsTrigger>}
+                {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="homework" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-gray-100 dark:border-gray-700">📝 Házi</TabsTrigger>}
+                {userRole === 'teacher' && <TabsTrigger value="teacher-absences" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-gray-100 dark:border-gray-700">📋 Mulasztások</TabsTrigger>}
+                {userRole === 'teacher' && <TabsTrigger value="teacher-homework" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-gray-100 dark:border-gray-700">📝 Házi</TabsTrigger>}
+                {(currentUser?.role === 'homeroom_teacher') && <TabsTrigger value="class-excuses" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-gray-100 dark:border-gray-700">✅ Igazolások</TabsTrigger>}
+                {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="student-excuses" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-gray-100 dark:border-gray-700">✅ Igazolás</TabsTrigger>}
+                {userRole !== 'admin' && <TabsTrigger value="radio" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-gray-100 dark:border-gray-700">🎵 Rádió</TabsTrigger>}
+                <TabsTrigger value="chat" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-gray-100 dark:border-gray-700">💬 Chat</TabsTrigger>
+                {userRole !== 'teacher' && userRole !== 'admin' && <TabsTrigger value="qr" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-gray-100 dark:border-gray-700">📱 QR</TabsTrigger>}
+                {userRole === 'admin' && <TabsTrigger value="admin-schedule" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-gray-100 dark:border-gray-700">📅 Órarend</TabsTrigger>}
+                {userRole === 'admin' && <TabsTrigger value="admin-grades" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-gray-100 dark:border-gray-700">📊 Jegyek</TabsTrigger>}
+                {userRole === 'admin' && <TabsTrigger value="admin-users" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-gray-100 dark:border-gray-700">👥 Userek</TabsTrigger>}
+                <TabsTrigger value="profile" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none">👤 Profil</TabsTrigger>
+              </TabsList>
+            </div>
+          )}
 
           <TabsContent value="dashboard" className="space-y-6">
             {userRole === 'admin' ? (
@@ -837,15 +889,29 @@ export default function Dashboard() {
                       <User className="h-5 w-5 mr-2 text-blue-600" />
                       Tanárok
                     </CardTitle>
+                    <Input
+                      placeholder="Keresés név vagy email alapján..."
+                      value={teacherSearch}
+                      onChange={(e) => setTeacherSearch(e.target.value)}
+                      className="mt-2"
+                    />
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
-                      {allUsers.filter(user => user.role === 'teacher').map((teacher, index) => (
+                      {allUsers
+                        .filter(user => user.role === 'teacher' || user.role === 'homeroom_teacher')
+                        .filter(user => 
+                          !teacherSearch || 
+                          (user.fullName || user.name || '').toLowerCase().includes(teacherSearch.toLowerCase()) ||
+                          (user.email || '').toLowerCase().includes(teacherSearch.toLowerCase())
+                        )
+                        .sort((a, b) => (a.fullName || a.name || '').localeCompare(b.fullName || b.name || ''))
+                        .slice(0, 5)
+                        .map((teacher, index) => (
                         <div key={index} className="p-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg hover:shadow-sm transition-shadow">
                           <h4 className="font-semibold text-gray-900 dark:text-white">{teacher.fullName || teacher.name}</h4>
                           <p className="text-sm text-gray-600 dark:text-gray-400">{teacher.email}</p>
                           {teacher.subject && <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">Tantárgy: {teacher.subject}</p>}
-                          {teacher.classes && <p className="text-xs text-green-600 dark:text-green-400">Osztályok: {teacher.classes.join(', ')}</p>}
                         </div>
                       ))}
                     </div>
@@ -858,10 +924,25 @@ export default function Dashboard() {
                       <BookOpen className="h-5 w-5 mr-2 text-green-600" />
                       Diákok
                     </CardTitle>
+                    <Input
+                      placeholder="Keresés név vagy email alapján..."
+                      value={studentSearch}
+                      onChange={(e) => setStudentSearch(e.target.value)}
+                      className="mt-2"
+                    />
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
-                      {allUsers.filter(user => user.role === 'student' || user.role === 'dj').map((student, index) => (
+                      {allUsers
+                        .filter(user => user.role === 'student' || user.role === 'dj')
+                        .filter(user => 
+                          !studentSearch || 
+                          (user.fullName || user.name || '').toLowerCase().includes(studentSearch.toLowerCase()) ||
+                          (user.email || '').toLowerCase().includes(studentSearch.toLowerCase())
+                        )
+                        .sort((a, b) => (a.fullName || a.name || '').localeCompare(b.fullName || b.name || ''))
+                        .slice(0, 5)
+                        .map((student, index) => (
                         <div key={index} className="p-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg hover:shadow-sm transition-shadow">
                           <div className="flex items-start justify-between">
                             <div>
@@ -881,13 +962,13 @@ export default function Dashboard() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-sm">
                   <CardHeader>
-                    <CardTitle className="flex items-center text-lg">
-                      <Calendar className="h-5 w-5 mr-2 text-blue-600" />
-                      Mai órák - {new Date().toLocaleDateString('hu-HU', { weekday: 'long', month: 'long', day: 'numeric' })}
+                    <CardTitle className="flex items-center text-sm sm:text-lg">
+                      <Calendar className="h-4 w-4 sm:h-5 sm:w-5 mr-2 text-blue-600" />
+                      <span className="text-xs sm:text-base">Mai órák - {new Date().toLocaleDateString('hu-HU', { weekday: 'long', month: 'long', day: 'numeric' })}</span>
                     </CardTitle>
                   </CardHeader>
-                  <CardContent>
-                    <Table>
+                  <CardContent className="overflow-x-auto">
+                    <Table className="text-xs sm:text-sm">
                       <TableHeader>
                         <TableRow>
                           <TableHead>Idő</TableHead>
@@ -929,13 +1010,13 @@ export default function Dashboard() {
 
                 <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-sm">
                   <CardHeader>
-                    <CardTitle className="flex items-center text-lg">
-                      <BookOpen className="h-5 w-5 mr-2 text-green-600" />
-                      {userRole === 'teacher' ? 'Általam adott jegyek' : 'Legutóbbi jegyek'}
+                    <CardTitle className="flex items-center text-sm sm:text-lg">
+                      <BookOpen className="h-4 w-4 sm:h-5 sm:w-5 mr-2 text-green-600" />
+                      <span className="text-xs sm:text-base">{userRole === 'teacher' ? 'Általam adott jegyek' : 'Legutóbbi jegyek'}</span>
                     </CardTitle>
                   </CardHeader>
-                  <CardContent>
-                    <Table>
+                  <CardContent className="overflow-x-auto">
+                    <Table className="text-xs sm:text-sm">
                       <TableHeader>
                         <TableRow>
                           <TableHead>Tantárgy</TableHead>
@@ -976,24 +1057,25 @@ export default function Dashboard() {
             )}
           </TabsContent>
 
-          <TabsContent value="schedule" className="space-y-6">
+          <TabsContent value="schedule" className="space-y-3 sm:space-y-6">
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Calendar className="h-5 w-5 mr-2" />
+              <CardHeader className="p-3 sm:p-6">
+                <CardTitle className="flex items-center text-sm sm:text-lg">
+                  <Calendar className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
                   Órarend
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="mb-6">
-                  <div className="flex items-center justify-between mb-4">
+              <CardContent className="p-3 sm:p-6">
+                <div className="mb-3 sm:mb-6">
+                  <div className="flex items-center justify-between mb-2 sm:mb-4 gap-1 sm:gap-2">
                     <button
                       onClick={() => setCurrentWeek(currentWeek - 1)}
-                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                      className="px-2 py-1 sm:px-4 sm:py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors text-xs sm:text-sm"
                     >
-                      Előző hét
+                      <span className="hidden sm:inline">Előző hét</span>
+                      <span className="sm:hidden">←</span>
                     </button>
-                    <div className="flex gap-2">
+                    <div className="flex gap-1 sm:gap-2 overflow-x-auto scrollbar-hide">
                       {['Hétfő', 'Kedd', 'Szerda', 'Csütörtök', 'Péntek'].map((day, index) => {
                         const dayDate = new Date()
                         dayDate.setDate(dayDate.getDate() - dayDate.getDay() + 1 + index + (currentWeek * 7))
@@ -1002,12 +1084,12 @@ export default function Dashboard() {
                           <button
                             key={day}
                             onClick={() => setSelectedDate(dayDate)}
-                            className={`px-3 py-2 rounded text-sm font-medium ${isSelected
+                            className={`px-2 py-1 sm:px-3 sm:py-2 rounded text-xs sm:text-sm font-medium whitespace-nowrap ${isSelected
                               ? 'bg-blue-500 text-white'
                               : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                               }`}
                           >
-                            <div>{day}</div>
+                            <div className="text-xs sm:text-sm">{day.slice(0, 2)}<span className="hidden sm:inline">{day.slice(2)}</span></div>
                             <div className="text-xs">{dayDate.getDate()}</div>
                           </button>
                         )
@@ -1015,17 +1097,18 @@ export default function Dashboard() {
                     </div>
                     <button
                       onClick={() => setCurrentWeek(currentWeek + 1)}
-                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+                      className="px-2 py-1 sm:px-4 sm:py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors text-xs sm:text-sm"
                     >
-                      Következő hét
+                      <span className="hidden sm:inline">Következő hét</span>
+                      <span className="sm:hidden">→</span>
                     </button>
                   </div>
                 </div>
-                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4">
-                  <h3 className="font-semibold text-center mb-3 text-gray-900 dark:text-white">
+                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-2 sm:p-4">
+                  <h3 className="font-semibold text-center mb-2 sm:mb-3 text-gray-900 dark:text-white text-xs sm:text-base">
                     {selectedDate.toLocaleDateString('hu-HU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                   </h3>
-                  <div className="space-y-2 relative">
+                  <div className="space-y-1 sm:space-y-2 relative">
                     {(() => {
                       const now = currentTime
                       const today = now.toLocaleDateString('hu-HU', { weekday: 'long' })
@@ -1160,16 +1243,16 @@ export default function Dashboard() {
           </TabsContent>
 
           {(userRole === 'student' || userRole === 'dj') && (
-            <TabsContent value="grades" className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <TabsContent value="grades" className="space-y-3 sm:space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-6">
                 <Card className="lg:col-span-1">
-                  <CardHeader>
-                    <CardTitle className="flex items-center">
-                      <BookOpen className="h-5 w-5 mr-2" />
+                  <CardHeader className="p-3 sm:p-6">
+                    <CardTitle className="flex items-center text-sm sm:text-lg">
+                      <BookOpen className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
                       Átlagok
                     </CardTitle>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="p-3 sm:p-6">
                     <div className="space-y-4">
                       <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                         <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">
@@ -1307,10 +1390,10 @@ export default function Dashboard() {
                 </Card>
 
                 <Card className="lg:col-span-2">
-                  <CardHeader>
-                    <CardTitle>Jegyek részletesen</CardTitle>
+                  <CardHeader className="p-3 sm:p-6">
+                    <CardTitle className="text-sm sm:text-lg">Jegyek részletesen</CardTitle>
                   </CardHeader>
-                  <CardContent>
+                  <CardContent className="p-3 sm:p-6">
                     <div className="space-y-6">
                       {Object.entries(
                         grades.reduce((acc, grade) => {
@@ -1359,8 +1442,8 @@ export default function Dashboard() {
             </TabsContent>
           )}
 
-          <TabsContent value="teacher-grades" className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          <TabsContent value="teacher-grades" className="space-y-3 sm:space-y-6">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 sm:gap-6">
               <div className="lg:col-span-1">
                 <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-sm">
                   <CardHeader>
@@ -1377,11 +1460,14 @@ export default function Dashboard() {
                         <option value="">Válassz osztályt</option>
                         {(() => {
                           const teacherName = currentUser?.fullName || currentUser?.name
-                          let teacherLessons = lessons.filter(lesson => lesson.Teacher === teacherName && lesson.userId === currentUser?.id)
+                          const allLessonsForProfile = (window as any).allLessonsForProfile || []
+                          let teacherLessons = allLessonsForProfile.filter((lesson: any) => 
+                            lesson.Teacher === teacherName
+                          )
                           if (teacherName === 'Nagy Péter') {
-                            teacherLessons = teacherLessons.filter(l => l.Class !== '12.B')
+                            teacherLessons = teacherLessons.filter((l: any) => l.Class !== '12.B')
                           }
-                          const teacherClasses = [...new Set(teacherLessons.map(lesson => lesson.Class))]
+                          const teacherClasses = [...new Set(teacherLessons.map((lesson: any) => lesson.Class))].filter(Boolean)
                           return teacherClasses.map(className => (
                             <option key={className} value={className}>{className}</option>
                           ))
@@ -1398,11 +1484,14 @@ export default function Dashboard() {
                         <option value="">Válassz diákot</option>
                         {(() => {
                           const teacherName = currentUser?.fullName || currentUser?.name
-                          let teacherLessons = lessons.filter(lesson => lesson.Teacher === teacherName && lesson.userId === currentUser?.id)
+                          const allLessonsForProfile = (window as any).allLessonsForProfile || []
+                          let teacherLessons = allLessonsForProfile.filter((lesson: any) => 
+                            lesson.Teacher === teacherName
+                          )
                           if (teacherName === 'Nagy Péter') {
-                            teacherLessons = teacherLessons.filter(l => l.Class !== '12.B')
+                            teacherLessons = teacherLessons.filter((l: any) => l.Class !== '12.B')
                           }
-                          const teacherClasses = [...new Set(teacherLessons.map(lesson => lesson.Class))]
+                          const teacherClasses = [...new Set(teacherLessons.map((lesson: any) => lesson.Class))].filter(Boolean)
                           return allUsers.filter(user =>
                             (user.role === 'student' || user.role === 'dj') &&
                             teacherClasses.includes(user.class) &&
@@ -1510,11 +1599,14 @@ export default function Dashboard() {
                           <option value="">Összes osztály</option>
                           {(() => {
                             const teacherName = currentUser?.fullName || currentUser?.name
-                            let teacherLessons = lessons.filter(lesson => lesson.Teacher === teacherName && lesson.userId === currentUser?.id)
+                            const allLessonsForProfile = (window as any).allLessonsForProfile || []
+                            let teacherLessons = allLessonsForProfile.filter((lesson: any) => 
+                              lesson.Teacher === teacherName
+                            )
                             if (teacherName === 'Nagy Péter') {
-                              teacherLessons = teacherLessons.filter(l => l.Class !== '12.B')
+                              teacherLessons = teacherLessons.filter((l: any) => l.Class !== '12.B')
                             }
-                            const teacherClasses = [...new Set(teacherLessons.map(lesson => lesson.Class))]
+                            const teacherClasses = [...new Set(teacherLessons.map((lesson: any) => lesson.Class))].filter(Boolean)
                             return teacherClasses.map(className => (
                               <option key={className} value={className}>{className}</option>
                             ))
@@ -1526,11 +1618,14 @@ export default function Dashboard() {
                   <CardContent>
                     {(() => {
                       const teacherName = currentUser?.fullName || currentUser?.name
-                      let teacherLessons = lessons.filter(lesson => lesson.Teacher === teacherName && lesson.userId === currentUser?.id)
+                      const allLessonsForProfile = (window as any).allLessonsForProfile || []
+                      let teacherLessons = allLessonsForProfile.filter((lesson: any) => 
+                        lesson.Teacher === teacherName
+                      )
                       if (teacherName === 'Nagy Péter') {
-                        teacherLessons = teacherLessons.filter(l => l.Class !== '12.B')
+                        teacherLessons = teacherLessons.filter((l: any) => l.Class !== '12.B')
                       }
-                      const teacherClasses = [...new Set(teacherLessons.map(lesson => lesson.Class))]
+                      const teacherClasses = [...new Set(teacherLessons.map((lesson: any) => lesson.Class))].filter(Boolean)
 
                       const studentsInClasses = allUsers.filter(user =>
                         (user.role === 'student' || user.role === 'dj') &&
@@ -1622,21 +1717,22 @@ export default function Dashboard() {
             </div>
           </TabsContent>
 
-          <TabsContent value="radio" className="space-y-6">
+          <TabsContent value="radio" className="space-y-3 sm:space-y-6">
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Music className="h-5 w-5 mr-2" />
+              <CardHeader className="p-3 sm:p-6">
+                <CardTitle className="flex items-center text-sm sm:text-lg">
+                  <Music className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
                   Zene beküldése
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3 sm:space-y-4 p-3 sm:p-6">
                 <Input
-                  placeholder="Zene URL (Spotify, YouTube, YouTube Music, Apple Music)"
+                  placeholder="Zene URL (Spotify, YouTube, stb.)"
                   value={musicUrl}
                   onChange={(e) => setMusicUrl(e.target.value)}
+                  className="text-sm"
                 />
-                <Button onClick={submitMusicRequest} className="w-full">
+                <Button onClick={submitMusicRequest} className="w-full text-sm">
                   Zene beküldése
                 </Button>
               </CardContent>
@@ -1736,16 +1832,16 @@ export default function Dashboard() {
             </div>
           </TabsContent>
 
-          <TabsContent value="chat" className="space-y-6">
+          <TabsContent value="chat" className="space-y-3 sm:space-y-6">
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <MessageCircle className="h-5 w-5 mr-2" />
+              <CardHeader className="p-3 sm:p-6">
+                <CardTitle className="flex items-center text-sm sm:text-lg">
+                  <MessageCircle className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
                   Üzenőfal
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-4 max-h-96 overflow-y-auto mb-4">
+              <CardContent className="p-3 sm:p-6">
+                <div className="space-y-2 sm:space-y-4 max-h-60 sm:max-h-96 overflow-y-auto mb-3 sm:mb-4 text-xs sm:text-sm">
                   {chatMessages.map((message) => (
                     <div key={message.id} className="border-b pb-2">
                       <div className="flex justify-between items-start">
@@ -1781,36 +1877,37 @@ export default function Dashboard() {
                     </div>
                   ))}
                 </div>
-                <div className="flex space-x-2">
+                <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
                   <Textarea
                     placeholder="Írj egy üzenetet..."
                     value={chatMessage}
                     onChange={(e) => setChatMessage(e.target.value)}
-                    className="flex-1"
+                    className="flex-1 text-sm"
+                    rows={2}
                   />
-                  <Button onClick={sendChatMessage}>Küldés</Button>
+                  <Button onClick={sendChatMessage} className="w-full sm:w-auto text-sm">Küldés</Button>
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="qr" className="space-y-6">
+          <TabsContent value="qr" className="space-y-3 sm:space-y-6">
             <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <QrCode className="h-5 w-5 mr-2" />
+              <CardHeader className="p-3 sm:p-6">
+                <CardTitle className="flex items-center text-sm sm:text-lg">
+                  <QrCode className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
                   QR Kód belépéshez
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-center">
+              <CardContent className="text-center p-3 sm:p-6">
                 {qrCode ? (
-                  <div className="space-y-4">
-                    <img src={qrCode} alt="QR Code" className="mx-auto" />
-                    <p className="text-sm text-gray-600">
+                  <div className="space-y-3 sm:space-y-4">
+                    <img src={qrCode} alt="QR Code" className="mx-auto w-48 sm:w-64" />
+                    <p className="text-xs sm:text-sm text-gray-600">
                       Mutasd fel ezt a QR kódot a portásnál belépéskor
                     </p>
-                    <Button onClick={generateUserQR} variant="outline">
-                      Új QR kód generálása
+                    <Button onClick={generateUserQR} variant="outline" className="text-xs sm:text-sm">
+                      Új QR kód
                     </Button>
                   </div>
                 ) : (
@@ -1821,8 +1918,8 @@ export default function Dashboard() {
           </TabsContent>
 
           {userRole === 'admin' && (
-            <TabsContent value="admin-schedule" className="space-y-6">
-              <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <TabsContent value="admin-schedule" className="space-y-3 sm:space-y-6">
+              <div className="grid grid-cols-1 xl:grid-cols-3 gap-3 sm:gap-6">
                 <div className="xl:col-span-2">
                   <ScheduleManager allUsers={allUsers} availableClasses={availableClasses} />
                 </div>
@@ -1983,14 +2080,14 @@ export default function Dashboard() {
           )}
 
           {userRole === 'admin' && (
-            <TabsContent value="admin-grades" className="space-y-6">
+            <TabsContent value="admin-grades" className="space-y-3 sm:space-y-6">
               <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-sm">
-                <CardHeader>
-                  <CardTitle className="text-lg">Jegyek kezelése</CardTitle>
+                <CardHeader className="p-3 sm:p-6">
+                  <CardTitle className="text-sm sm:text-lg">Jegyek kezelése</CardTitle>
                 </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
+                <CardContent className="p-3 sm:p-6">
+                  <div className="space-y-3 sm:space-y-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4">
                       <div>
                         <label className="block text-sm font-medium mb-1">Osztály szűrő</label>
                         <select
@@ -2100,14 +2197,14 @@ export default function Dashboard() {
           )}
 
           {userRole === 'admin' && (
-            <TabsContent value="admin-users" className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <TabsContent value="admin-users" className="space-y-3 sm:space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-6">
                 <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-sm">
-                  <CardHeader>
-                    <CardTitle className="text-lg">Tanár regisztráció</CardTitle>
+                  <CardHeader className="p-3 sm:p-6">
+                    <CardTitle className="text-sm sm:text-lg">Tanár regisztráció</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
+                  <CardContent className="space-y-3 sm:space-y-4 p-3 sm:p-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4">
                       <div>
                         <label className="block text-sm font-medium mb-1">Email</label>
                         <input
@@ -2192,11 +2289,11 @@ export default function Dashboard() {
                 </Card>
 
                 <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-sm">
-                  <CardHeader>
-                    <CardTitle className="text-lg">Diák regisztráció</CardTitle>
+                  <CardHeader className="p-3 sm:p-6">
+                    <CardTitle className="text-sm sm:text-lg">Diák regisztráció</CardTitle>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="grid grid-cols-2 gap-4">
+                  <CardContent className="space-y-3 sm:space-y-4 p-3 sm:p-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4">
                       <div>
                         <label className="block text-sm font-medium mb-1">Email</label>
                         <input
@@ -2329,7 +2426,9 @@ export default function Dashboard() {
                       const matchesRole = !gradeForm.student || user.role === gradeForm.student || 
                         (gradeForm.student === 'teacher' && user.role === 'homeroom_teacher')
                       return matchesClass && matchesRole
-                    }).map((user, index) => (
+                    })
+                    .sort((a, b) => (a.fullName || a.name || '').localeCompare(b.fullName || b.name || ''))
+                    .map((user, index) => (
                       <div key={user.id || index} className={`flex items-center justify-between p-4 rounded-lg ${user.id ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800' : 'bg-gray-50 dark:bg-gray-800'
                         }`}>
                         <div>
@@ -2468,12 +2567,12 @@ export default function Dashboard() {
           )}
 
           {(userRole === 'student' || userRole === 'dj') && (
-            <TabsContent value="absences" className="space-y-6">
+            <TabsContent value="absences" className="space-y-3 sm:space-y-6">
               <Card>
-                <CardHeader>
-                  <CardTitle>Mulasztásaim</CardTitle>
+                <CardHeader className="p-3 sm:p-6">
+                  <CardTitle className="text-sm sm:text-lg">Mulasztásaim</CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="p-3 sm:p-6">
                   <div className="space-y-4">
                     {(() => {
                       if (attendance.length === 0) {
@@ -2561,8 +2660,8 @@ export default function Dashboard() {
           )}
 
           {(userRole === 'student' || userRole === 'dj') && (
-            <TabsContent value="homework" className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <TabsContent value="homework" className="space-y-3 sm:space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-6">
                 {homework.map((hw) => {
                   const submission = homeworkSubmissions[hw.id]
                   const isOverdue = new Date(hw.dueDate) < new Date()
@@ -2638,10 +2737,10 @@ export default function Dashboard() {
           )}
 
           {userRole === 'teacher' && (
-            <TabsContent value="teacher-absences" className="space-y-6">
+            <TabsContent value="teacher-absences" className="space-y-3 sm:space-y-6">
               <Card>
-                <CardHeader>
-                  <CardTitle>Mulasztások kezelése</CardTitle>
+                <CardHeader className="p-3 sm:p-6">
+                  <CardTitle className="text-sm sm:text-lg">Mulasztások kezelése</CardTitle>
                   <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
                     Kattints egy órára az órarendben a mulasztások rögzítéséhez.
                   </p>
@@ -2760,14 +2859,19 @@ export default function Dashboard() {
             </TabsContent>
           )}
 
-          {userRole === 'classTeacher' && (
-            <TabsContent value="class-excuses" className="space-y-6">
+          {(currentUser?.role === 'homeroom_teacher') && (
+            <TabsContent value="class-excuses" className="space-y-3 sm:space-y-6">
               <Card>
-                <CardHeader>
-                  <CardTitle>Igazolások kezelése - {currentUser?.classTeacher} osztály</CardTitle>
+                <CardHeader className="p-3 sm:p-6">
+                  <CardTitle className="text-sm sm:text-lg">Igazolások - {currentUser?.class}</CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="p-3 sm:p-6">
                   <div className="space-y-4">
+                    {excuses.length === 0 && (
+                      <div className="text-center py-8 text-gray-500">
+                        <p>Nincsenek igazolási kérelmek.</p>
+                      </div>
+                    )}
                     {excuses.map((excuse) => (
                       <div key={excuse.id} className={`border rounded-lg p-4 ${excuse.status === 'approved' ? 'border-green-300 bg-green-50 dark:bg-green-900/10' :
                         excuse.status === 'rejected' ? 'border-red-300 bg-red-50 dark:bg-red-900/10' :
@@ -2852,12 +2956,150 @@ export default function Dashboard() {
                         )}
                       </div>
                     ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
 
-                    {excuses.length === 0 && (
-                      <div className="text-center py-8 text-gray-500">
-                        <p>Nincsenek igazolási kérelmek.</p>
+          {(userRole === 'student' || userRole === 'dj') && (
+            <TabsContent value="student-excuses" className="space-y-3 sm:space-y-6">
+              <Card>
+                <CardHeader className="p-3 sm:p-6">
+                  <CardTitle className="text-sm sm:text-lg">Igazolás beküldése</CardTitle>
+                </CardHeader>
+                <CardContent className="p-3 sm:p-6">
+                  <div className="space-y-4">
+                    <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                      <p className="text-sm text-blue-800 dark:text-blue-200">Válaszd ki a hiányzásokat, amelyeket igazolni szeretnél, és küldd be az osztályfőnöködnek jóváhagyásra.</p>
+                    </div>
+                    {(() => {
+                      const unexcusedAbsences = attendance.filter(record => !record.excused)
+                      if (unexcusedAbsences.length === 0) {
+                        return (
+                          <div className="text-center py-8 text-gray-500">
+                            <p>Nincsenek igazolatlan hiányzásaid.</p>
+                          </div>
+                        )
+                      }
+                      return (
+                        <div className="space-y-3">
+                          {unexcusedAbsences.map(record => (
+                            <div key={record.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 bg-white dark:bg-gray-800">
+                              <label className="flex items-center gap-3 cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={selectedAbsences.some(a => a.id === record.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedAbsences([...selectedAbsences, record])
+                                    } else {
+                                      setSelectedAbsences(selectedAbsences.filter(a => a.id !== record.id))
+                                    }
+                                  }}
+                                  className="w-4 h-4"
+                                />
+                                <div className="flex-1">
+                                  <div className="font-medium text-gray-900 dark:text-white">{record.subject}</div>
+                                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                                    {new Date(record.date).toLocaleDateString('hu-HU')} - {record.startTime}
+                                  </div>
+                                </div>
+                              </label>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })()}
+                    {selectedAbsences.length > 0 && (
+                      <div className="space-y-3 border-t pt-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Igazolás típusa</label>
+                          <select
+                            value={excuseForm.excuseType}
+                            onChange={(e) => setExcuseForm({ ...excuseForm, excuseType: e.target.value })}
+                            className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600"
+                          >
+                            <option value="">Válassz...</option>
+                            <option value="Orvosi igazolás">Orvosi igazolás</option>
+                            <option value="Szülői igazolás">Szülői igazolás</option>
+                            <option value="Egyéb">Egyéb</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Indoklás</label>
+                          <textarea
+                            value={excuseForm.description}
+                            onChange={(e) => setExcuseForm({ ...excuseForm, description: e.target.value })}
+                            className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600"
+                            rows={3}
+                            placeholder="Írd le az indoklást..."
+                          />
+                        </div>
+                        <Button
+                          onClick={async () => {
+                            if (!excuseForm.excuseType) {
+                              alert('Válaszd ki az igazolás típusát!')
+                              return
+                            }
+                            try {
+                              const response = await fetch('/api/excuses', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  studentId: currentUser?.id || user?.uid,
+                                  studentName: currentUser?.fullName || currentUser?.name,
+                                  studentClass: currentUser?.class,
+                                  absenceIds: selectedAbsences.map(a => a.id),
+                                  excuseType: excuseForm.excuseType,
+                                  description: excuseForm.description,
+                                  submittedBy: currentUser?.fullName || currentUser?.name
+                                })
+                              })
+                              if (response.ok) {
+                                alert('Igazolás sikeresen beküldve!')
+                                setSelectedAbsences([])
+                                setExcuseForm({ absenceIds: [], excuseType: '', description: '' })
+                                loadExcuses()
+                              }
+                            } catch (error) {
+                              alert('Hiba történt')
+                            }
+                          }}
+                          className="w-full bg-blue-600 hover:bg-blue-700"
+                        >
+                          Igazolás beküldése ({selectedAbsences.length} hiányzás)
+                        </Button>
                       </div>
                     )}
+                    <div className="border-t pt-4 mt-6">
+                      <h4 className="font-semibold mb-3">Beküldött igazolások</h4>
+                      {excuses.length === 0 ? (
+                        <p className="text-sm text-gray-500">Még nem küldted be igazolást.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {excuses.map(excuse => (
+                            <div key={excuse.id} className={`p-3 rounded-lg border ${
+                              excuse.status === 'approved' ? 'bg-green-50 border-green-300 dark:bg-green-900/10' :
+                              excuse.status === 'rejected' ? 'bg-red-50 border-red-300 dark:bg-red-900/10' :
+                              'bg-yellow-50 border-yellow-300 dark:bg-yellow-900/10'
+                            }`}>
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <div className="font-medium text-sm">{excuse.excuseType}</div>
+                                  <div className="text-xs text-gray-600 dark:text-gray-400">
+                                    {excuse.absenceIds?.length || 0} hiányzás - {new Date(excuse.submittedAt).toLocaleDateString('hu-HU')}
+                                  </div>
+                                </div>
+                                <Badge className={excuse.status === 'approved' ? 'bg-green-500' : excuse.status === 'rejected' ? 'bg-red-500' : 'bg-yellow-500'}>
+                                  {excuse.status === 'approved' ? 'Elfogadva' : excuse.status === 'rejected' ? 'Elutasítva' : 'Függőben'}
+                                </Badge>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -2865,8 +3107,8 @@ export default function Dashboard() {
           )}
 
           {userRole === 'teacher' && (
-            <TabsContent value="teacher-homework" className="space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <TabsContent value="teacher-homework" className="space-y-3 sm:space-y-6">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-6">
                 <Card className="lg:col-span-1">
                   <CardHeader>
                     <CardTitle className="text-lg">Házi feladat kiadása</CardTitle>
@@ -2995,7 +3237,7 @@ export default function Dashboard() {
             </TabsContent>
           )}
 
-          <TabsContent value="profile" className="space-y-6">
+          <TabsContent value="profile" className="space-y-3 sm:space-y-6">
             <div className="max-w-4xl mx-auto">
               <div className={`relative overflow-hidden rounded-2xl shadow-xl ${currentUser?.role === 'admin' ? 'bg-gradient-to-br from-red-500 via-red-600 to-red-700' :
                 currentUser?.role === 'teacher' ? 'bg-gradient-to-br from-purple-500 via-purple-600 to-purple-700' :
@@ -3029,7 +3271,7 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6 mt-4 sm:mt-8">
                 <Card className="bg-white dark:bg-gray-800 border-0 shadow-lg">
                   <CardHeader className="pb-4">
                     <CardTitle className="text-lg text-gray-800 dark:text-white">Személyes adatok</CardTitle>
@@ -3191,11 +3433,9 @@ export default function Dashboard() {
                       // or better, let's trust the user's claim that 12.B is wrong.
 
                       const filteredLessons = allLessonsForProfile.filter((lesson: any) =>
-                        lesson.Teacher === teacherName &&
-                        lesson.userId === currentUser?.id
+                        lesson.Teacher === teacherName
                       );
 
-                      // Hacky fix for Nagy Péter to satisfy the user immediately while we clean DB later
                       const finalLessons = teacherName === 'Nagy Péter'
                         ? filteredLessons.filter((l: any) => l.Class !== '12.B')
                         : filteredLessons;
@@ -3238,9 +3478,9 @@ export default function Dashboard() {
       </main>
 
       {!cookieConsent && (
-        <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t dark:border-gray-700 p-4 shadow-lg z-50">
-          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="text-sm text-gray-600 dark:text-gray-300">
+        <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t dark:border-gray-700 p-3 sm:p-4 shadow-lg z-50">
+          <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2 sm:gap-4">
+            <div className="text-xs sm:text-sm text-gray-600 dark:text-gray-300 text-center sm:text-left">
               Ez az oldal sütiket használ a beállítások mentéséhez (pl. sötét mód).
               <a href="#" className="text-blue-600 dark:text-blue-400 underline ml-1">
                 További információ
@@ -3273,8 +3513,8 @@ export default function Dashboard() {
       )}
 
       {showChartModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-8 max-w-6xl w-full max-h-[95vh] overflow-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-3 sm:p-8 max-w-6xl w-full max-h-[95vh] overflow-auto">
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Tantárgyak átlagai</h3>
@@ -3405,8 +3645,8 @@ export default function Dashboard() {
 
       {/* Házi feladat részletek modal */}
       {showHomeworkModal && selectedHomework && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl p-6 max-w-4xl w-full max-h-[90vh] overflow-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl p-3 sm:p-6 max-w-4xl w-full max-h-[90vh] overflow-auto">
             <div className="flex justify-between items-start mb-4">
               <div>
                 <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{selectedHomework.title}</h3>
@@ -3487,8 +3727,8 @@ export default function Dashboard() {
 
       {/* Házi feladat beadás modal */}
       {showSubmissionModal && selectedHomework && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl p-6 max-w-2xl w-full">
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl p-3 sm:p-6 max-w-2xl w-full">
             <div className="flex justify-between items-start mb-4">
               <div>
                 <h3 className="text-xl font-bold text-gray-900 dark:text-white">Házi feladat beadása</h3>
@@ -3539,8 +3779,8 @@ export default function Dashboard() {
 
       {/* Mulasztás rögzítés modal */}
       {showAttendanceModal && selectedLesson && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl p-6 max-w-4xl w-full max-h-[90vh] overflow-auto">
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl p-3 sm:p-6 max-w-4xl w-full max-h-[90vh] overflow-auto">
             <div className="flex justify-between items-start mb-4">
               <div>
                 <h3 className="text-xl font-bold text-gray-900 dark:text-white">

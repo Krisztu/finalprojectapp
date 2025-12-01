@@ -65,6 +65,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ homework, submissions })
     }
     
+    // Ha tanár kéri, hozzáadjuk a beadások számát minden házi feladathoz
+    if (teacherId) {
+      const allSubmissionsSnapshot = await getDocs(collection(db, 'homework-submissions'))
+      const submissionCounts = allSubmissionsSnapshot.docs.reduce((acc, doc) => {
+        const data = doc.data()
+        acc[data.homeworkId] = (acc[data.homeworkId] || 0) + 1
+        return acc
+      }, {} as Record<string, number>)
+      
+      const homeworkWithCounts = homework.map(hw => ({
+        ...hw,
+        submissionCount: submissionCounts[hw.id] || 0
+      }))
+      
+      return NextResponse.json(homeworkWithCounts)
+    }
+    
     return NextResponse.json(homework)
   } catch (error) {
     return NextResponse.json({ error: 'Failed to fetch homework' }, { status: 500 })

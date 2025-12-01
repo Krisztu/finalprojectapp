@@ -35,16 +35,49 @@ export async function POST(request: NextRequest) {
     
     await setDoc(doc(db, 'users', user.uid), userData)
     
-    // Ha diák, másoljuk az órarendet
+    // Ha diák, másoljuk az órarendet az osztálytársaitól
     if ((role === 'student' || role === 'dj') && userData.class) {
       try {
-        const response = await fetch(`${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/users`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(userData)
-        })
+        const { collection: firestoreCollection, getDocs, query, where, addDoc } = await import('firebase/firestore')
+        
+        // Keressünk egy osztálytársat
+        const classStudentsQuery = query(
+          firestoreCollection(db, 'users'),
+          where('class', '==', userData.class),
+          where('role', 'in', ['student', 'dj'])
+        )
+        const classStudentsSnapshot = await getDocs(classStudentsQuery)
+        
+        if (!classStudentsSnapshot.empty) {
+          const classmate = classStudentsSnapshot.docs[0]
+          
+          // Másoljuk az osztálytárs óráit
+          const lessonsQuery = query(
+            firestoreCollection(db, 'lessons'),
+            where('userId', '==', classmate.id)
+          )
+          const lessonsSnapshot = await getDocs(lessonsQuery)
+          
+          // Létrehozzuk az új diák óráit
+          const lessonPromises = lessonsSnapshot.docs.map(lessonDoc => {
+            const lesson = lessonDoc.data()
+            return addDoc(firestoreCollection(db, 'lessons'), {
+              userId: user.uid,
+              day: lesson.day,
+              startTime: lesson.startTime,
+              subject: lesson.subject,
+              teacherName: lesson.teacherName,
+              className: lesson.className,
+              room: lesson.room || '',
+              createdAt: new Date().toISOString()
+            })
+          })
+          
+          await Promise.all(lessonPromises)
+        }
       } catch (error) {
-        // Órarend másolás sikertelen
+        // Órarend másolás sikertelen, de a regisztráció sikeres
+        console.error('Schedule copy failed:', error)
       }
     }
     

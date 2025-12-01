@@ -1,8 +1,223 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    
+    // Helper functions for authentication and authorization
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isValidRole(role) {
+      return role in ['admin', 'teacher', 'homeroom_teacher', 'student', 'dj'];
+    }
+    
+    function isValidGrade(grade) {
+      return grade is int && grade >= 1 && grade <= 5;
+    }
+    
+    // Users collection - User profile management
+    match /users/{userId} {
+      // Read: All authenticated users can read user profiles (needed for app functionality)
+      allow read: if isAuthenticated();
+      
+      // Create: All authenticated users can create profiles during registration
+      allow create: if isAuthenticated() && isValidRole(request.resource.data.role);
+      
+      // Update: Users can update their own profile, or any authenticated user (for admin operations)
+      allow update: if isAuthenticated();
+      
+      // Delete: All authenticated users can delete (admin operations through API)
+      allow delete: if isAuthenticated();
+    }
+    
+    // Lessons collection - Schedule management
+    match /lessons/{lessonId} {
+      // Read: All authenticated users can read lessons (needed for schedule display)
+      allow read: if isAuthenticated();
+      
+      // Create: All authenticated users can create lessons (admin/teacher operations through API)
+      allow create: if isAuthenticated();
+      
+      // Update: All authenticated users can update lessons (admin/teacher operations through API)
+      allow update: if isAuthenticated();
+      
+      // Delete: All authenticated users can delete lessons (admin operations through API)
+      allow delete: if isAuthenticated();
+    }
+    
+    // Grades collection - Grade management
+    match /grades/{gradeId} {
+      // Read: All authenticated users can read grades (role-based filtering in API)
+      allow read: if isAuthenticated();
+      
+      // Create: All authenticated users can create grades (teacher operations through API)
+      allow create: if isAuthenticated() && isValidGrade(request.resource.data.grade);
+      
+      // Update: All authenticated users can update grades (teacher/admin operations through API)
+      allow update: if isAuthenticated() && isValidGrade(request.resource.data.grade);
+      
+      // Delete: All authenticated users can delete grades (teacher/admin operations through API)
+      allow delete: if isAuthenticated();
+    }
+    
+    // Homework collection - Homework assignments
+    match /homework/{homeworkId} {
+      // Read: All authenticated users can read homework (role-based filtering in API)
+      allow read: if isAuthenticated();
+      
+      // Create: All authenticated users can create homework (teacher operations through API)
+      allow create: if isAuthenticated();
+      
+      // Update: All authenticated users can update homework (teacher/admin operations through API)
+      allow update: if isAuthenticated();
+      
+      // Delete: All authenticated users can delete homework (teacher/admin operations through API)
+      allow delete: if isAuthenticated();
+    }
+    
+    // Homework submissions collection
+    match /homework-submissions/{submissionId} {
+      // Read: All authenticated users can read submissions (role-based filtering in API)
+      allow read: if isAuthenticated();
+      
+      // Create: All authenticated users can create submissions (student operations through API)
+      allow create: if isAuthenticated();
+      
+      // Update: All authenticated users can update submissions (student/teacher operations through API)
+      allow update: if isAuthenticated();
+      
+      // Delete: All authenticated users can delete submissions (student/teacher/admin operations through API)
+      allow delete: if isAuthenticated();
+    }
+    
+    // Attendance collection - Attendance records
+    match /attendance/{attendanceId} {
+      // Read: All authenticated users can read attendance (role-based filtering in API)
+      allow read: if isAuthenticated();
+      
+      // Create: All authenticated users can create attendance (teacher operations through API)
+      allow create: if isAuthenticated();
+      
+      // Update: All authenticated users can update attendance (teacher/admin operations through API)
+      allow update: if isAuthenticated();
+      
+      // Delete: All authenticated users can delete attendance (admin operations through API)
+      allow delete: if isAuthenticated();
+    }
+    
+    // Absences collection - Individual absence records
+    match /absences/{absenceId} {
+      // Read: All authenticated users can read absences (role-based filtering in API)
+      allow read: if isAuthenticated();
+      
+      // Create: All authenticated users can create absences (teacher operations through API)
+      allow create: if isAuthenticated();
+      
+      // Update: All authenticated users can update absences (teacher/homeroom teacher operations through API)
+      allow update: if isAuthenticated();
+      
+      // Delete: All authenticated users can delete absences (admin operations through API)
+      allow delete: if isAuthenticated();
+    }
+    
+    // Excuses collection - Excuse requests
+    match /excuses/{excuseId} {
+      // Read: All authenticated users can read excuses (role-based filtering in API)
+      allow read: if isAuthenticated();
+      
+      // Create: All authenticated users can create excuses (student operations through API)
+      allow create: if isAuthenticated();
+      
+      // Update: All authenticated users can update excuses (homeroom teacher/admin operations through API)
+      allow update: if isAuthenticated();
+      
+      // Delete: All authenticated users can delete excuses (admin operations through API)
+      allow delete: if isAuthenticated();
+    }
+    
+    // Chat messages collection - School chat/bulletin board
+    match /chatMessages/{messageId} {
+      // Read: All authenticated users can read chat messages
+      allow read: if isAuthenticated();
+      
+      // Create: All authenticated users can create messages
+      allow create: if isAuthenticated();
+      
+      // Update: All authenticated users can update messages (user/admin operations through API)
+      allow update: if isAuthenticated();
+      
+      // Delete: All authenticated users can delete messages (user/admin operations through API)
+      allow delete: if isAuthenticated();
+    }
+    
+    // Music requests collection - School radio requests
+    match /musicRequests/{requestId} {
+      // Read: All authenticated users can read music requests
+      allow read: if isAuthenticated();
+      
+      // Create: All authenticated users can create music requests
+      allow create: if isAuthenticated();
+      
+      // Update: All authenticated users can update music requests (user/DJ/admin operations through API)
+      allow update: if isAuthenticated();
+      
+      // Delete: All authenticated users can delete music requests (user/DJ/admin operations through API)
+      allow delete: if isAuthenticated();
+    }
+    
+    // Access logs collection - QR code access logs
+    match /accessLogs/{logId} {
+      // Read: All authenticated users can read access logs
+      allow read: if isAuthenticated();
+      
+      // Create: All authenticated users can create access logs (system operations through API)
+      allow create: if isAuthenticated();
+      
+      // Update: All authenticated users can update access logs (admin operations through API)
+      allow update: if isAuthenticated();
+      
+      // Delete: All authenticated users can delete access logs (admin operations through API)
+      allow delete: if isAuthenticated();
+    }
+    
+    // Schedule changes collection - Temporary schedule modifications
+    match /scheduleChanges/{changeId} {
+      // Read: All authenticated users can read schedule changes
+      allow read: if isAuthenticated();
+      
+      // Create: All authenticated users can create schedule changes (admin operations through API)
+      allow create: if isAuthenticated();
+      
+      // Update: All authenticated users can update schedule changes (admin operations through API)
+      allow update: if isAuthenticated();
+      
+      // Delete: All authenticated users can delete schedule changes (admin operations through API)
+      allow delete: if isAuthenticated();
+    }
+    
+    // System logs collection - Application logs
+    match /systemLogs/{logId} {
+      // Read: All authenticated users can read system logs
+      allow read: if isAuthenticated();
+      
+      // Create: All authenticated users can create logs (system operations through API)
+      allow create: if isAuthenticated();
+      
+      // Update: All authenticated users can update logs (admin operations through API)
+      allow update: if isAuthenticated();
+      
+      // Delete: All authenticated users can delete logs (admin operations through API)
+      allow delete: if isAuthenticated();
+    }
+    
+    // Allow access to any other collections for authenticated users
+    // This ensures the app works while role-based security is handled in API layer
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if isAuthenticated();
     }
   }
 }

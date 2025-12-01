@@ -38,8 +38,7 @@ export async function GET(request: NextRequest) {
     let excusesQuery = collection(db, 'excuses')
     
     if (classTeacher) {
-      const className = classTeacher === '12.A' ? '12.A' : '12.B'
-      excusesQuery = query(collection(db, 'excuses'), where('studentClass', '==', className))
+      excusesQuery = query(collection(db, 'excuses'), where('studentClass', '==', classTeacher))
     } else if (studentId) {
       excusesQuery = query(collection(db, 'excuses'), where('studentId', '==', studentId))
     }

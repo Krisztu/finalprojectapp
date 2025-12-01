@@ -135,3 +135,20 @@ html {
 body {
   transition: background-color 0.3s ease, color 0.3s ease;
 }
+
+/* Hide scrollbar for mobile tabs */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Mobile optimizations */
+@media (max-width: 640px) {
+  .mobile-compact {
+    @apply text-xs p-2;
+  }
+}
