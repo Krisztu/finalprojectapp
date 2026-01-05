@@ -1,33 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/firebase'
-import { collection, getDocs, deleteDoc } from 'firebase/firestore'
+import { db } from '@/lib/firebase-admin'
 
 export async function DELETE(request: NextRequest) {
   try {
-    // Töröljük az összes mulasztást
-    const absencesSnapshot = await getDocs(collection(db, 'absences'))
-    const absenceDeletePromises = absencesSnapshot.docs.map(doc => deleteDoc(doc.ref))
+    const absencesSnapshot = await db.collection('absences').get()
+    const absenceDeletePromises = absencesSnapshot.docs.map(doc => doc.ref.delete())
     await Promise.all(absenceDeletePromises)
-    
-    // Töröljük az összes jelenléti adatot
-    const attendanceSnapshot = await getDocs(collection(db, 'attendance'))
-    const attendanceDeletePromises = attendanceSnapshot.docs.map(doc => deleteDoc(doc.ref))
+
+    const attendanceSnapshot = await db.collection('attendance').get()
+    const attendanceDeletePromises = attendanceSnapshot.docs.map(doc => doc.ref.delete())
     await Promise.all(attendanceDeletePromises)
-    
-    // Töröljük az összes órát
-    const lessonsSnapshot = await getDocs(collection(db, 'lessons'))
-    const lessonDeletePromises = lessonsSnapshot.docs.map(doc => deleteDoc(doc.ref))
+
+    const lessonsSnapshot = await db.collection('lessons').get()
+    const lessonDeletePromises = lessonsSnapshot.docs.map(doc => doc.ref.delete())
     await Promise.all(lessonDeletePromises)
-    
-    return NextResponse.json({ 
-      success: true, 
+
+    return NextResponse.json({
+      success: true,
       message: `Adatbázis törölve: ${absencesSnapshot.docs.length} mulasztás, ${attendanceSnapshot.docs.length} jelenléti adat és ${lessonsSnapshot.docs.length} óra törölve`,
       absencesDeleted: absencesSnapshot.docs.length,
       attendanceDeleted: attendanceSnapshot.docs.length,
       lessonsDeleted: lessonsSnapshot.docs.length
     })
   } catch (error: any) {
-    return NextResponse.json({ 
+    console.error('Clear DELETE Error:', error)
+    return NextResponse.json({
       error: 'Adatbázis törlése sikertelen'
     }, { status: 500 })
   }

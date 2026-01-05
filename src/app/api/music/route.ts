@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/firebase'
-import { collection, addDoc, getDocs, query, orderBy, limit, doc, deleteDoc, getDoc } from 'firebase/firestore'
+import { db } from '@/lib/firebase-admin'
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,38 +14,32 @@ export async function POST(request: NextRequest) {
       createdAt: new Date().toISOString()
     }
 
-    const docRef = await addDoc(collection(db, 'musicRequests'), musicRequest)
+    const docRef = await db.collection('musicRequests').add(musicRequest)
 
     return NextResponse.json({ id: docRef.id, ...musicRequest })
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to submit music request' }, { status: 500 })
+    console.error('Music POST Error:', error)
+    return NextResponse.json({ error: 'Nem sikerült beküldeni a zenei kérést' }, { status: 500 })
   }
 }
 
 export async function GET() {
   try {
-    // Note: orderBy might still fail if index is missing, but let's try with it first.
-    // If it fails, we can remove it or catch the specific error.
-    // For now, I'll keep it simple and maybe remove orderBy if it persists.
-    // Actually, let's try WITHOUT orderBy first to be safe, as we saw 500s before.
-    // Or better, catch the error and try without it? No, that's complex.
-    // Let's use the query without orderBy for now to ensure it works.
-
-    const q = query(collection(db, 'musicRequests'), limit(50));
-    const snapshot = await getDocs(q);
+    const snapshot = await db.collection('musicRequests')
+      .limit(50)
+      .get()
 
     const requests = snapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }))
 
-    // Sort manually in memory if needed
-    requests.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    requests.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
 
     return NextResponse.json(requests)
   } catch (error) {
-    console.error('Music GET Error:', error);
-    return NextResponse.json({ error: 'Failed to fetch music requests' }, { status: 500 })
+    console.error('Music GET Error:', error)
+    return NextResponse.json({ error: 'Nem sikerült lekérni a zenei kéréseket' }, { status: 500 })
   }
 }
 
@@ -56,20 +49,21 @@ export async function DELETE(request: NextRequest) {
     const id = searchParams.get('id')
 
     if (!id) {
-      return NextResponse.json({ error: 'Music request ID required' }, { status: 400 })
+      return NextResponse.json({ error: 'Zenei kérés azonosító szükséges' }, { status: 400 })
     }
 
-    const docRef = doc(db, 'musicRequests', id)
-    const docSnap = await getDoc(docRef)
+    const docRef = db.collection('musicRequests').doc(id)
+    const docSnap = await docRef.get()
 
-    if (!docSnap.exists()) {
-      return NextResponse.json({ error: 'Music request not found' }, { status: 404 })
+    if (!docSnap.exists) {
+      return NextResponse.json({ error: 'Zenei kérés nem található' }, { status: 404 })
     }
 
-    await deleteDoc(docRef)
+    await docRef.delete()
 
-    return NextResponse.json({ success: true, message: 'Music request deleted successfully' })
+    return NextResponse.json({ success: true, message: 'Zenei kérés sikeresen törölve' })
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to delete music request' }, { status: 500 })
+    console.error('Music DELETE Error:', error)
+    return NextResponse.json({ error: 'Nem sikerült törölni a zenei kérést' }, { status: 500 })
   }
 }

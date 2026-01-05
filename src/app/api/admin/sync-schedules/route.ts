@@ -1,110 +1,78 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/firebase'
-import { collection, getDocs, addDoc, query, where } from 'firebase/firestore'
+import { db } from '@/lib/firebase-admin'
 
 export async function POST(request: NextRequest) {
   try {
-
-    
-    // Lekérjük az összes diákot
-    const usersSnapshot = await getDocs(collection(db, 'users'))
+    const usersSnapshot = await db.collection('users').get()
     const students = usersSnapshot.docs
       .map(doc => ({ id: doc.id, ...doc.data() }))
-      .filter(user => (user.role === 'student' || user.role === 'dj') && user.class)
-    
+      .filter((user: any) => (user.role === 'student' || user.role === 'dj') && user.class)
 
-    
     let updatedCount = 0
-    
+
     for (const student of students) {
+      const existingLessonsQuery = db.collection('lessons')
+        .where('userId', '==', student.id)
 
-      
-      // Ellenőrizzük, van-e már órarendje
-      const existingLessonsQuery = query(
-        collection(db, 'lessons'),
-        where('userId', '==', student.id)
-      )
-      
-      const existingLessonsSnapshot = await getDocs(existingLessonsQuery)
-      
+      const existingLessonsSnapshot = await existingLessonsQuery.get()
+
       if (existingLessonsSnapshot.empty) {
-
-        
         let sourceUserId = null
-        
-        // Keressük meg az osztály más diákjait
-        const classmatesQuery = query(
-          collection(db, 'users'),
-          where('class', '==', student.class)
-        )
-        
-        const classmatesSnapshot = await getDocs(classmatesQuery)
 
-        
+        const classmatesQuery = db.collection('users')
+          .where('class', '==', student.class)
+
+        const classmatesSnapshot = await classmatesQuery.get()
+
         for (const classmateDoc of classmatesSnapshot.docs) {
           const classmateId = classmateDoc.id
-          const classmateData = classmateDoc.data()
-          
+
           if (classmateId !== student.id) {
-            const classmateScheduleQuery = query(
-              collection(db, 'lessons'),
-              where('userId', '==', classmateId)
-            )
-            
-            const classmateScheduleSnapshot = await getDocs(classmateScheduleQuery)
-            
+            const classmateScheduleQuery = db.collection('lessons')
+              .where('userId', '==', classmateId)
+
+            const classmateScheduleSnapshot = await classmateScheduleQuery.get()
+
             if (!classmateScheduleSnapshot.empty) {
               sourceUserId = classmateId
-
               break
             }
           }
         }
-        
 
-        
-        // Ha találtunk forrás órarendet, másoljuk át
         if (sourceUserId) {
-          const sourceLessonsQuery = query(
-            collection(db, 'lessons'),
-            where('userId', '==', sourceUserId)
-          )
-          
-          const sourceLessonsSnapshot = await getDocs(sourceLessonsQuery)
-          
+          const sourceLessonsQuery = db.collection('lessons')
+            .where('userId', '==', sourceUserId)
+
+          const sourceLessonsSnapshot = await sourceLessonsQuery.get()
+
           if (!sourceLessonsSnapshot.empty) {
             const lessonPromises = sourceLessonsSnapshot.docs.map(lessonDoc => {
               const lessonData = lessonDoc.data()
-              return addDoc(collection(db, 'lessons'), {
+              return db.collection('lessons').add({
                 ...lessonData,
                 userId: student.id,
                 createdAt: new Date().toISOString()
               })
             })
-            
+
             await Promise.all(lessonPromises)
             updatedCount++
-
-          } else {
-
           }
-        } else {
-
         }
-      } else {
-
       }
     }
-    
-    return NextResponse.json({ 
-      success: true, 
-      message: `Schedule sync completed: ${updatedCount} students updated`,
+
+    return NextResponse.json({
+      success: true,
+      message: `Órarend szinkronizálás kész: ${updatedCount} diák frissítve`,
       studentsUpdated: updatedCount,
       totalStudents: students.length
     })
   } catch (error: any) {
-    return NextResponse.json({ 
-      error: 'Failed to sync schedules'
+    console.error('Sync Schedules POST Error:', error)
+    return NextResponse.json({
+      error: 'Nem sikerült szinkronizálni az órarendeket'
     }, { status: 500 })
   }
 }

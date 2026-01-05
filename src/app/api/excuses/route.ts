@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/firebase'
-import { collection, addDoc, getDocs, doc, updateDoc, query, where, getDoc } from 'firebase/firestore'
+import { db } from '@/lib/firebase-admin'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { studentId, studentName, studentClass, absenceIds, excuseType, description, submittedBy } = body
-    
+
     if (!studentId || !absenceIds || !excuseType) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+      return NextResponse.json({ error: 'Hiányzó kötelező mezők' }, { status: 400 })
     }
-    
-    const excuseDoc = await addDoc(collection(db, 'excuses'), {
+
+    const excuseDoc = await db.collection('excuses').add({
       studentId,
       studentName,
       studentClass,
@@ -22,10 +21,11 @@ export async function POST(request: NextRequest) {
       status: 'pending',
       submittedAt: new Date().toISOString()
     })
-    
+
     return NextResponse.json({ success: true, id: excuseDoc.id })
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to submit excuse' }, { status: 500 })
+    console.error('Excuses POST Error:', error)
+    return NextResponse.json({ error: 'Nem sikerült benyújtani az igazolást' }, { status: 500 })
   }
 }
 
@@ -34,24 +34,25 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const classTeacher = searchParams.get('classTeacher')
     const studentId = searchParams.get('studentId')
-    
-    let excusesQuery = collection(db, 'excuses')
-    
+
+    let excusesQuery = db.collection('excuses')
+
     if (classTeacher) {
-      excusesQuery = query(collection(db, 'excuses'), where('studentClass', '==', classTeacher))
+      excusesQuery = excusesQuery.where('studentClass', '==', classTeacher)
     } else if (studentId) {
-      excusesQuery = query(collection(db, 'excuses'), where('studentId', '==', studentId))
+      excusesQuery = excusesQuery.where('studentId', '==', studentId)
     }
-    
-    const excusesSnapshot = await getDocs(excusesQuery)
+
+    const excusesSnapshot = await excusesQuery.get()
     const excuses = excusesSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }))
-    
+
     return NextResponse.json(excuses)
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch excuses' }, { status: 500 })
+    console.error('Excuses GET Error:', error)
+    return NextResponse.json({ error: 'Nem sikerült lekérni az igazolásokat' }, { status: 500 })
   }
 }
 
@@ -59,26 +60,26 @@ export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { id, status, reviewedBy } = body
-    
+
     if (!id || !status) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+      return NextResponse.json({ error: 'Hiányzó kötelező mezők' }, { status: 400 })
     }
-    
-    const excuseRef = doc(db, 'excuses', id)
-    await updateDoc(excuseRef, {
+
+    const excuseRef = db.collection('excuses').doc(id)
+    await excuseRef.update({
       status,
       reviewedBy,
       reviewedAt: new Date().toISOString()
     })
-    
+
     if (status === 'approved') {
-      const excuseDoc = await getDoc(excuseRef)
+      const excuseDoc = await excuseRef.get()
       const excuseData = excuseDoc.data()
-      
+
       if (excuseData?.absenceIds) {
         for (const absenceId of excuseData.absenceIds) {
-          const absenceRef = doc(db, 'absences', absenceId)
-          await updateDoc(absenceRef, {
+          const absenceRef = db.collection('absences').doc(absenceId)
+          await absenceRef.update({
             excused: true,
             excusedBy: reviewedBy,
             excusedAt: new Date().toISOString()
@@ -86,9 +87,10 @@ export async function PUT(request: NextRequest) {
         }
       }
     }
-    
+
     return NextResponse.json({ success: true })
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to update excuse' }, { status: 500 })
+    console.error('Excuses PUT Error:', error)
+    return NextResponse.json({ error: 'Nem sikerült frissíteni az igazolást' }, { status: 500 })
   }
 }

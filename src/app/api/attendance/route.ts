@@ -1,21 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/firebase'
-import { collection, addDoc, getDocs, doc, updateDoc, query, where, and, getDoc } from 'firebase/firestore'
+import { db } from '@/lib/firebase-admin'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { lessonId, teacherId, date, startTime, subject, className, topic, students } = body
-    
+
     if (!lessonId || !teacherId || !date || !students) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+      return NextResponse.json({ error: 'Hiányzó kötelező mezők' }, { status: 400 })
     }
-    
-    // Store individual absence records for each absent student
+
     const absencePromises = students
       .filter((student: any) => !student.present)
-      .map((student: any) => 
-        addDoc(collection(db, 'absences'), {
+      .map((student: any) =>
+        db.collection('absences').add({
           studentId: student.studentId,
           studentName: student.studentName,
           lessonId,
@@ -29,11 +27,10 @@ export async function POST(request: NextRequest) {
           createdAt: new Date().toISOString()
         })
       )
-    
+
     await Promise.all(absencePromises)
-    
-    // Also store the full attendance record
-    const attendanceDoc = await addDoc(collection(db, 'attendance'), {
+
+    const attendanceDoc = await db.collection('attendance').add({
       lessonId,
       teacherId,
       date,
@@ -44,10 +41,11 @@ export async function POST(request: NextRequest) {
       students,
       createdAt: new Date().toISOString()
     })
-    
+
     return NextResponse.json({ success: true, id: attendanceDoc.id })
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to record attendance' }, { status: 500 })
+    console.error('Attendance POST Error:', error)
+    return NextResponse.json({ error: 'Nem sikerült rögzíteni a jelenlétet' }, { status: 500 })
   }
 }
 
@@ -58,36 +56,35 @@ export async function GET(request: NextRequest) {
     const studentId = searchParams.get('studentId')
     const className = searchParams.get('class')
     const date = searchParams.get('date')
-    
+
     if (studentId) {
-      // For students, return individual absence records
-      const absencesQuery = query(collection(db, 'absences'), where('studentId', '==', studentId))
-      const absencesSnapshot = await getDocs(absencesQuery)
+      const absencesQuery = db.collection('absences').where('studentId', '==', studentId)
+      const absencesSnapshot = await absencesQuery.get()
       const absences = absencesSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }))
       return NextResponse.json(absences)
     }
-    
-    // For teachers, return full attendance records
-    let attendanceQuery = collection(db, 'attendance')
-    
+
+    let attendanceQuery = db.collection('attendance')
+
     if (teacherId) {
-      attendanceQuery = query(collection(db, 'attendance'), where('teacherId', '==', teacherId))
+      attendanceQuery = attendanceQuery.where('teacherId', '==', teacherId)
     } else if (className) {
-      attendanceQuery = query(collection(db, 'attendance'), where('className', '==', className))
+      attendanceQuery = attendanceQuery.where('className', '==', className)
     }
-    
-    const attendanceSnapshot = await getDocs(attendanceQuery)
+
+    const attendanceSnapshot = await attendanceQuery.get()
     const attendance = attendanceSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }))
-    
+
     return NextResponse.json(attendance)
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch attendance' }, { status: 500 })
+    console.error('Attendance GET Error:', error)
+    return NextResponse.json({ error: 'Nem sikerült lekérni a jelenlétet' }, { status: 500 })
   }
 }
 
@@ -95,46 +92,37 @@ export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
     const { id, topic, students, studentId, excused, excusedBy } = body
-    
+
     if (!id) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+      return NextResponse.json({ error: 'Hiányzó kötelező mezők' }, { status: 400 })
     }
-    
-    const attendanceRef = doc(db, 'attendance', id)
-    
+
+    const attendanceRef = db.collection('attendance').doc(id)
+
     if (topic !== undefined && students) {
-      // Update full attendance record
-      await updateDoc(attendanceRef, { 
+      await attendanceRef.update({
         topic,
         students,
         updatedAt: new Date().toISOString()
       })
-      
-      // Get original attendance data
-      const attendanceDocRef = doc(db, 'attendance', id)
-      const attendanceDoc = await getDoc(attendanceDocRef)
+
+      const attendanceDoc = await attendanceRef.get()
       const originalData = attendanceDoc.data()
-      
-      // Delete all absence records for this specific lesson
-      const absencesQuery = query(
-        collection(db, 'absences'), 
-        and(
-          where('lessonId', '==', originalData?.lessonId),
-          where('date', '==', originalData?.date),
-          where('startTime', '==', originalData?.startTime)
-        )
-      )
-      const absencesSnapshot = await getDocs(absencesQuery)
-      
-      // Delete old records
-      for (const docSnapshot of absencesSnapshot.docs) {
-        await docSnapshot.ref.delete()
-      }
-      
-      // Create new absence records for absent students
-      for (const student of students) {
-        if (!student.present) {
-          await addDoc(collection(db, 'absences'), {
+
+      const absencesQuery = db.collection('absences')
+        .where('lessonId', '==', originalData?.lessonId)
+        .where('date', '==', originalData?.date)
+        .where('startTime', '==', originalData?.startTime)
+
+      const absencesSnapshot = await absencesQuery.get()
+
+      const deletePromises = absencesSnapshot.docs.map(doc => doc.ref.delete())
+      await Promise.all(deletePromises)
+
+      const addPromises = students
+        .filter((student: any) => !student.present)
+        .map((student: any) =>
+          db.collection('absences').add({
             studentId: student.studentId,
             studentName: student.studentName,
             lessonId: originalData?.lessonId,
@@ -147,19 +135,18 @@ export async function PUT(request: NextRequest) {
             excused: student.excused || false,
             createdAt: new Date().toISOString()
           })
-        }
-      }
+        )
+
+      await Promise.all(addPromises)
     } else if (studentId) {
-      // Update specific student excuse status
-      const attendanceDocRef = doc(db, 'attendance', id)
-      const attendanceDoc = await getDoc(attendanceDocRef)
-      
-      if (!attendanceDoc.exists()) {
-        return NextResponse.json({ error: 'Attendance record not found' }, { status: 404 })
+      const attendanceDoc = await attendanceRef.get()
+
+      if (!attendanceDoc.exists) {
+        return NextResponse.json({ error: 'Jelenléti adat nem található' }, { status: 404 })
       }
-      
+
       const attendanceData = attendanceDoc.data()
-      const updatedStudents = attendanceData.students.map((student: any) => {
+      const updatedStudents = attendanceData?.students.map((student: any) => {
         if (student.studentId === studentId) {
           return {
             ...student,
@@ -170,12 +157,13 @@ export async function PUT(request: NextRequest) {
         }
         return student
       })
-      
-      await updateDoc(attendanceRef, { students: updatedStudents })
+
+      await attendanceRef.update({ students: updatedStudents })
     }
-    
+
     return NextResponse.json({ success: true })
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to update attendance' }, { status: 500 })
+    console.error('Attendance PUT Error:', error)
+    return NextResponse.json({ error: 'Nem sikerült frissíteni a jelenlétet' }, { status: 500 })
   }
 }

@@ -11,18 +11,16 @@ export async function POST(request: NextRequest) {
 
     const now = new Date()
     const today = now.toISOString().split('T')[0]
-    
-    // Get student's access records for today
+
     const accessRef = db.collection('access').doc(`${studentId}_${today}`)
     const accessDoc = await accessRef.get()
     const accessData = accessDoc.data()
 
     if (action === 'entry') {
-      // First scan - entry
       if (accessData?.entryTime) {
-        return NextResponse.json({ 
-          success: false, 
-          error: 'Már beléptél ma!' 
+        return NextResponse.json({
+          success: false,
+          error: 'Már beléptél ma!'
         }, { status: 400 })
       }
 
@@ -38,22 +36,20 @@ export async function POST(request: NextRequest) {
         studentName: 'Demo Diák'
       })
     } else {
-      // Second scan - exit
       if (!accessData?.entryTime) {
-        return NextResponse.json({ 
-          success: false, 
-          error: 'Először be kell lépned!' 
+        return NextResponse.json({
+          success: false,
+          error: 'Először be kell lépned!'
         }, { status: 400 })
       }
 
       if (accessData?.exitTime) {
-        return NextResponse.json({ 
-          success: false, 
-          error: 'Már kiléptél ma!' 
+        return NextResponse.json({
+          success: false,
+          error: 'Már kiléptél ma!'
         }, { status: 400 })
       }
 
-      // Check if student can exit (simplified - after 14:00)
       const currentHour = now.getHours()
       const canExit = currentHour >= 14
 
@@ -78,9 +74,9 @@ export async function POST(request: NextRequest) {
       }
     }
   } catch (error) {
-    return NextResponse.json({ 
-      success: false, 
-      error: 'Szerver hiba' 
+    return NextResponse.json({
+      success: false,
+      error: 'Szerver hiba'
     }, { status: 500 })
   }
 }
@@ -89,9 +85,9 @@ export async function GET() {
   try {
     const accessDocs = await db.collection('access').orderBy('entryTime', 'desc').limit(50).get()
     const accessLogs = accessDocs.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-    
+
     return NextResponse.json(accessLogs)
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch access logs' }, { status: 500 })
+    return NextResponse.json({ error: 'Nem sikerült lekérni a belépési naplót' }, { status: 500 })
   }
 }

@@ -1,34 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/firebase'
-import { collection, addDoc, getDocs, query, where, and } from 'firebase/firestore'
+import { db } from '@/lib/firebase-admin'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { teacherId, date, timeSlot, changeType, newSubject, newTeacher, newClass, newRoom } = body
-    
+
     if (!teacherId || !date || !timeSlot || !changeType) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+      return NextResponse.json({ error: 'Hiányzó kötelező mezők' }, { status: 400 })
     }
-    
-    // Létrehozzuk az órarend módosítást
+
     const scheduleChange = {
       teacherId,
-      date, // YYYY-MM-DD formátum
-      timeSlot, // pl. "7:45"
-      changeType, // "cancelled", "substituted", "added"
+      date,
+      timeSlot,
+      changeType,
       newSubject: newSubject || '',
       newTeacher: newTeacher || '',
       newClass: newClass || '',
       newRoom: newRoom || '',
       createdAt: new Date().toISOString()
     }
-    
-    const changeDoc = await addDoc(collection(db, 'schedule-changes'), scheduleChange)
-    
+
+    const changeDoc = await db.collection('schedule-changes').add(scheduleChange)
+
     return NextResponse.json({ success: true, id: changeDoc.id })
   } catch (error: any) {
-    return NextResponse.json({ error: 'Failed to create schedule change' }, { status: 500 })
+    console.error('Schedule Changes POST Error:', error)
+    return NextResponse.json({ error: 'Nem sikerült létrehozni az órarend változtatást' }, { status: 500 })
   }
 }
 
@@ -37,29 +36,26 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const teacherId = searchParams.get('teacherId')
     const date = searchParams.get('date')
-    
-    let changesQuery = collection(db, 'schedule-changes')
-    
+
+    let changesQuery = db.collection('schedule-changes')
+
     if (teacherId && date) {
-      changesQuery = query(
-        collection(db, 'schedule-changes'),
-        and(
-          where('teacherId', '==', teacherId),
-          where('date', '==', date)
-        )
-      )
+      changesQuery = changesQuery
+        .where('teacherId', '==', teacherId)
+        .where('date', '==', date)
     } else if (date) {
-      changesQuery = query(collection(db, 'schedule-changes'), where('date', '==', date))
+      changesQuery = changesQuery.where('date', '==', date)
     }
-    
-    const changesSnapshot = await getDocs(changesQuery)
+
+    const changesSnapshot = await changesQuery.get()
     const changes = changesSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }))
-    
+
     return NextResponse.json(changes)
   } catch (error: any) {
-    return NextResponse.json({ error: 'Failed to fetch schedule changes' }, { status: 500 })
+    console.error('Schedule Changes GET Error:', error)
+    return NextResponse.json({ error: 'Nem sikerült lekérni az órarend változtatásokat' }, { status: 500 })
   }
 }

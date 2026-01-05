@@ -1,28 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/firebase'
-import { collection, addDoc, getDocs, doc, updateDoc, deleteDoc, getDoc, query, where } from 'firebase/firestore'
-
+import { auth, db } from '@/lib/firebase-admin'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { uid, email, fullName, studentId, role, subject, classes } = body
-    
 
-    
     if (!uid || !email || !role) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+      return NextResponse.json({ error: 'Hiányzó kötelező mezők' }, { status: 400 })
     }
-    
-    // Osztály hozzárendelés
+
     let assignedClass = body.class
-    
+
     if (role === 'student' && !assignedClass) {
       const availableClasses = ['12.A', '12.B']
       const randomIndex = Math.floor(Math.random() * availableClasses.length)
       assignedClass = availableClasses[randomIndex]
     }
-    
+
     const userData: any = {
       uid,
       email,
@@ -32,159 +27,179 @@ export async function POST(request: NextRequest) {
       class: assignedClass,
       createdAt: new Date().toISOString()
     }
-    
-    // Add teacher-specific fields
+
     if (role === 'teacher') {
       if (subject) userData.subject = subject
       if (classes) userData.classes = classes
     }
-    
-    const userDoc = await addDoc(collection(db, 'users'), userData)
-    
-    // Ha van hozzárendelt osztály, másoljuk át a meglévő órarendet
+
+    const userRef = await db.collection('users').add(userData)
+
     if (assignedClass && (role === 'student' || role === 'dj')) {
       const targetClass = assignedClass
       let sourceUserId = null
-      
-      // Először keressük a dinamikus felhasználók között
-      const existingUsersQuery = query(
-        collection(db, 'users'),
-        where('class', '==', targetClass),
-        where('role', 'in', ['student', 'dj'])
-      )
-      
-      const existingUsersSnapshot = await getDocs(existingUsersQuery)
-      
+
+      const existingUsersSnapshot = await db.collection('users')
+        .where('class', '==', targetClass)
+        .where('role', 'in', ['student', 'dj'])
+        .get()
+
       if (!existingUsersSnapshot.empty) {
         sourceUserId = existingUsersSnapshot.docs[0].id
-      } else {
-
       }
-      
+
       if (sourceUserId) {
-        // Keressük meg a forrás felhasználó óráit
-        const existingLessonsQuery = query(
-          collection(db, 'lessons'),
-          where('userId', '==', sourceUserId)
-        )
-        
-        const existingLessonsSnapshot = await getDocs(existingLessonsQuery)
-        
+        const existingLessonsSnapshot = await db.collection('lessons')
+          .where('userId', '==', sourceUserId)
+          .get()
+
         if (!existingLessonsSnapshot.empty) {
-          // Másoljuk át az órákat az új felhasználónak
-          const lessonPromises = existingLessonsSnapshot.docs.map(lessonDoc => {
+          const batch = db.batch()
+
+          existingLessonsSnapshot.docs.forEach(lessonDoc => {
             const lessonData = lessonDoc.data()
-            return addDoc(collection(db, 'lessons'), {
+            const newLessonRef = db.collection('lessons').doc()
+            batch.set(newLessonRef, {
               ...lessonData,
-              userId: userDoc.id,
+              userId: userRef.id,
               createdAt: new Date().toISOString()
             })
           })
-          
-          await Promise.all(lessonPromises)
+
+          await batch.commit()
         }
       }
     }
-    
-    return NextResponse.json({ 
-      success: true, 
-      id: userDoc.id, 
+
+    return NextResponse.json({
+      success: true,
+      id: userRef.id,
       class: assignedClass,
-      lessonsAdded: assignedClass ? 'Órarend automatikusan hozzáadva' : 'Nincs osztály' 
+      lessonsAdded: assignedClass ? 'Órarend automatikusan hozzáadva' : 'Nincs osztály'
     })
   } catch (error) {
-    console.error('Error creating user:', error)
-    return NextResponse.json({ error: 'Failed to create user' }, { status: 500 })
+    console.error('Error creating user FULL:', error)
+    return NextResponse.json({
+      error: 'Nem sikerült létrehozni a felhasználót',
+      details: (error as any)?.message
+    }, { status: 500 })
   }
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const usersSnapshot = await getDocs(collection(db, 'users'))
+    const { searchParams } = new URL(request.url)
+    const email = searchParams.get('email')
+    const role = searchParams.get('role')
+
+    let query: FirebaseFirestore.Query = db.collection('users')
+
+    if (email) {
+      query = query.where('email', '==', email)
+    }
+
+    if (role) {
+      query = query.where('role', '==', role)
+    }
+
+    const usersSnapshot = await query.get()
     const users = usersSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }))
-    
+
     return NextResponse.json(users)
   } catch (error) {
-    console.error('Error fetching users:', error)
-    return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 })
+    console.error('Error fetching users FULL:', error)
+    return NextResponse.json({
+      error: 'Nem sikerült lekérni a felhasználókat',
+      details: (error as any)?.message || 'Ismeretlen hiba'
+    }, { status: 500 })
   }
 }
 
 export async function PUT(request: NextRequest) {
   try {
-    const { id, role, class: userClass, fullName } = await request.json()
-    
+    const body = await request.json()
+    const { id, role, class: userClass, fullName } = body
+
     const updateData: any = {
       updatedAt: new Date().toISOString()
     }
-    
+
     if (role) updateData.role = role
     if (userClass) updateData.class = userClass
     if (fullName) updateData.fullName = fullName
-    
-    await updateDoc(doc(db, 'users', id), updateData)
-    
-    // Ha osztály változott, frissítsük az órarendet
+    if (body.profileImage) updateData.profileImage = body.profileImage
+
+    await db.collection('users').doc(id).update(updateData)
+
+    if (role || fullName) {
+      try {
+        const userDoc = await db.collection('users').doc(id).get()
+        const userData = userDoc.data()
+        if (userData?.uid) {
+          await auth.setCustomUserClaims(userData.uid, {
+            role: role || userData.role,
+            name: fullName || userData.fullName
+          })
+        }
+      } catch (error) {
+        console.error('Failed to update custom claims:', error)
+      }
+    }
+
     if (userClass) {
-      // Töröljük a régi órákat
-      const oldLessonsQuery = query(
-        collection(db, 'lessons'),
-        where('userId', '==', id)
-      )
-      
-      const oldLessonsSnapshot = await getDocs(oldLessonsQuery)
-      const deletePromises = oldLessonsSnapshot.docs.map(doc => deleteDoc(doc.ref))
-      await Promise.all(deletePromises)
-      
+      const oldLessonsSnapshot = await db.collection('lessons')
+        .where('userId', '==', id)
+        .get()
+
+      if (!oldLessonsSnapshot.empty) {
+        const batch = db.batch()
+        oldLessonsSnapshot.docs.forEach(doc => {
+          batch.delete(doc.ref)
+        })
+        await batch.commit()
+      }
+
       let sourceUserId = null
-      
-      // Először keressük a dinamikus felhasználók között
-      const newClassUsersQuery = query(
-        collection(db, 'users'),
-        where('class', '==', userClass),
-        where('role', 'in', ['student', 'dj'])
-      )
-      
-      const newClassUsersSnapshot = await getDocs(newClassUsersQuery)
-      
+
+      const newClassUsersSnapshot = await db.collection('users')
+        .where('class', '==', userClass)
+        .where('role', 'in', ['student', 'dj'])
+        .get()
+
       if (!newClassUsersSnapshot.empty) {
         sourceUserId = newClassUsersSnapshot.docs[0].id
-      } else {
-
       }
-      
+
       if (sourceUserId) {
-        // Keressük meg a forrás felhasználó óráit
-        const newLessonsQuery = query(
-          collection(db, 'lessons'),
-          where('userId', '==', sourceUserId)
-        )
-        
-        const newLessonsSnapshot = await getDocs(newLessonsQuery)
-        
+        const newLessonsSnapshot = await db.collection('lessons')
+          .where('userId', '==', sourceUserId)
+          .get()
+
         if (!newLessonsSnapshot.empty) {
-          const lessonPromises = newLessonsSnapshot.docs.map(lessonDoc => {
+          const batch = db.batch()
+
+          newLessonsSnapshot.docs.forEach(lessonDoc => {
             const lessonData = lessonDoc.data()
-            return addDoc(collection(db, 'lessons'), {
+            const newLessonRef = db.collection('lessons').doc()
+            batch.set(newLessonRef, {
               ...lessonData,
               userId: id,
               createdAt: new Date().toISOString()
             })
           })
-          
-          await Promise.all(lessonPromises)
 
+          await batch.commit()
         }
       }
     }
-    
+
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('Error updating user:', error)
-    return NextResponse.json({ error: 'Failed to update user' }, { status: 500 })
+    return NextResponse.json({ error: 'Nem sikerült frissíteni a felhasználót' }, { status: 500 })
   }
 }
 
@@ -192,35 +207,28 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
-    
 
-    
     if (!id) {
-      return NextResponse.json({ error: 'User ID required' }, { status: 400 })
+      return NextResponse.json({ error: 'Felhasználó azonosító szükséges' }, { status: 400 })
     }
-    
-    // Ellenőrizzük, hogy létezik-e a dokumentum és lekérjük az uid-t
-    const userRef = doc(db, 'users', id)
-    const userDoc = await getDoc(userRef)
-    
-    if (!userDoc.exists()) {
-      return NextResponse.json({ error: 'User not found' }, { status: 404 })
-    }
-    
-    const userData = userDoc.data()
-    
-    await deleteDoc(userRef)
-    
 
-    
-    return NextResponse.json({ 
-      success: true, 
-      message: 'User deleted from Firestore', 
+    const userRef = db.collection('users').doc(id)
+    const userDoc = await userRef.get()
+
+    if (!userDoc.exists) {
+      return NextResponse.json({ error: 'Felhasználó nem található' }, { status: 404 })
+    }
+
+    await userRef.delete()
+
+    return NextResponse.json({
+      success: true,
+      message: 'Felhasználó törölve a Firestore-ból',
       deletedId: id
     })
   } catch (error: any) {
-    return NextResponse.json({ 
-      error: 'Failed to delete user'
+    return NextResponse.json({
+      error: 'Nem sikerült törölni a felhasználót'
     }, { status: 500 })
   }
 }

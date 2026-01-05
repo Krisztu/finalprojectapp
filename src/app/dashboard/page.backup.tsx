@@ -1,41 +1,26 @@
-﻿'use client'
+'use client'
 
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { uploadToCloudinary } from '@/lib/cloudinary'
-import QRCode from 'qrcode'
-import { LogOut, User as UserIcon, BookOpen, Calendar, Music, MessageCircle, QrCode, Camera, Upload } from 'lucide-react'
-import { CustomAlert } from '@/components/ui/custom-alert'
-import { ChartModal } from '@/components/dashboard/ChartModal'
-import { HomeworkModal } from '@/components/dashboard/HomeworkModal'
-import { SubmissionModal } from '@/components/dashboard/SubmissionModal'
-import { AttendanceModal } from '@/components/dashboard/AttendanceModal'
+import { LogOut, User, BookOpen, Calendar, Music, MessageCircle, QrCode } from 'lucide-react'
+import { generateQRCode, detectMusicPlatform } from '@/lib/utils'
+// Adatok az adatbázisból töltődnek be
 import ScheduleManager from '@/components/admin/ScheduleManager'
+import { Badge } from '@/components/ui/badge'
 
 const getYouTubeVideoId = (url: string): string => {
   if (url.includes('music.youtube.com')) {
     return url.split('v=')[1]?.split('&')[0] || url.split('/').pop() || ''
   }
   return url.split('v=')[1]?.split('&')[0] || url.split('/').pop() || ''
-}
-
-const detectMusicPlatform = (url: string): string | null => {
-  if (url.includes('spotify.com')) {
-    return 'spotify'
-  }
-  if (url.includes('youtube.com') || url.includes('youtu.be') || url.includes('music.youtube.com')) {
-    return 'youtube'
-  }
-  return null
 }
 
 export default function Dashboard() {
@@ -95,15 +80,6 @@ export default function Dashboard() {
   const [teacherSearch, setTeacherSearch] = useState('')
   const [studentSearch, setStudentSearch] = useState('')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [alertData, setAlertData] = useState<{ isOpen: boolean, title: string, message: string, type: 'success' | 'error' | 'warning' | 'info' | 'default' }>({ isOpen: false, title: '', message: '', type: 'default' })
-  const [justifications, setJustifications] = useState<any[]>([])
-  const [justificationForm, setJustificationForm] = useState({ date: '', reason: '', proofUrl: '' })
-  const [selectedJustification, setSelectedJustification] = useState<any>(null)
-  const [showJustificationModal, setShowJustificationModal] = useState(false)
-
-  const showAlert = (message: string, type: 'success' | 'error' | 'warning' | 'info' | 'default' = 'default', title: string = 'Értesítés') => {
-    setAlertData({ isOpen: true, title, message, type })
-  }
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -118,7 +94,7 @@ export default function Dashboard() {
       return
     }
 
-
+    // Load cookie consent and dark mode from localStorage
     const consent = localStorage.getItem('cookieConsent')
     if (consent === 'true') {
       setCookieConsent(true)
@@ -137,7 +113,7 @@ export default function Dashboard() {
     setupUserRoles()
   }, [user])
 
-
+  // Újratöltjük az órarendet amikor a kiválasztott dátum változik
   useEffect(() => {
     if (currentUser) {
       loadLessons(currentUser)
@@ -145,7 +121,6 @@ export default function Dashboard() {
       loadAttendance()
       if (currentUser.role === 'homeroom_teacher' || currentUser.role === 'student' || currentUser.role === 'dj') {
         loadExcuses()
-        loadJustifications()
       }
     }
   }, [selectedDate, currentUser])
@@ -157,12 +132,13 @@ export default function Dashboard() {
       const email = user.email || ''
       let userData = null
 
-      const response = await fetch(`/api/users?email=${encodeURIComponent(email)}`)
+      const response = await fetch('/api/users')
       if (response.ok) {
         const users = await response.json()
-        const apiUser = users[0]
+        const apiUser = users.find((u: any) => u.email === email)
         if (apiUser) {
           userData = apiUser
+          // homeroom_teacher szerepkört is teacher-ként kezeljük
           if (apiUser.role === 'homeroom_teacher') {
             setUserRole('teacher')
           } else {
@@ -180,18 +156,18 @@ export default function Dashboard() {
 
       setCurrentUser(userData)
 
-
+      // Load lessons from database
       await loadLessons(userData)
 
-
+      // Load grades from database
       await loadGrades(userData)
 
       if (userData?.role === 'admin' || userData?.role === 'teacher' || userData?.role === 'homeroom_teacher') {
-        const effectiveRole = userData.role === 'homeroom_teacher' ? 'teacher' : userData.role
-        await loadAllUsers(effectiveRole)
+        await loadAllUsers()
         console.log('Admin/tanár adatok betöltve')
 
         if (userData?.role === 'teacher' || userData?.role === 'homeroom_teacher') {
+          // Betöltjük az ÖSSZES órát a profilhoz és jegyadáshoz
           const allLessonsResponse = await fetch('/api/lessons')
           if (allLessonsResponse.ok) {
             const allLessonsData = await allLessonsResponse.json()
@@ -249,11 +225,11 @@ export default function Dashboard() {
     try {
       const action = Math.random() > 0.5 ? 'entry' : 'exit'
       const qrData = `${window.location.origin}/qr-scan?student=${user.uid}&action=${action}`
-      const qrCodeUrl = await QRCode.toDataURL(qrData)
+      const qrCodeUrl = await generateQRCode(qrData)
       setQrCode(qrCodeUrl)
       console.log('QR kód generálva')
     } catch (error) {
-      console.log('QR kód generálás sikertelen', error)
+      console.log('QR kód generálás sikertelen')
     }
   }
 
@@ -327,14 +303,16 @@ export default function Dashboard() {
         const response = await fetch(url)
         if (response.ok) {
           const gradesData = await response.json()
+          // Sort by date (newest first)
           gradesData.sort((a: any, b: any) => new Date(b.date || b.createdAt).getTime() - new Date(a.date || a.createdAt).getTime())
           setGrades(gradesData)
         }
       } else if (userData?.role === 'teacher') {
-
+        // Tanár esetén betöltjük az összes jegyet
         const response = await fetch('/api/grades')
         if (response.ok) {
           const allGrades = await response.json()
+          // Sort by date (newest first)
           allGrades.sort((a: any, b: any) => new Date(b.date || b.createdAt).getTime() - new Date(a.date || a.createdAt).getTime())
           setGrades(allGrades)
         }
@@ -342,6 +320,7 @@ export default function Dashboard() {
         const response = await fetch('/api/grades')
         if (response.ok) {
           const gradesData = await response.json()
+          // Sort by date (newest first)
           gradesData.sort((a: any, b: any) => new Date(b.date || b.createdAt).getTime() - new Date(a.date || a.createdAt).getTime())
           setGrades(gradesData)
         }
@@ -356,19 +335,41 @@ export default function Dashboard() {
       let url = '/api/lessons'
       let userId = null
 
-      if (userData?.id) {
-        url += `?userId=${encodeURIComponent(userData.id)}`
-      } else if (user?.email) {
-        url += `?userId=${encodeURIComponent(user.email)}`
-      } else {
-        return
+      if (user?.uid) {
+        // Keressük meg az ID-ját a users collection-ben
+        const email = user.email || ''
+        try {
+          const usersResponse = await fetch('/api/users')
+          if (usersResponse.ok) {
+            const users = await usersResponse.json()
+            const dbUser = users.find((u: any) => u.email === email)
+            if (dbUser) {
+              userId = dbUser.id
+            }
+          }
+        } catch (error) {
+          console.log('Felhasználók betöltése sikertelen')
+        }
+
+        if (userId) {
+          // KRITIKUS: Tanárok esetében CSAK a saját userId-jükkel szűrünk
+          url += `?userId=${encodeURIComponent(userId)}`
+        } else {
+          // Ha nincs userId, próbáljuk email alapján
+          const email = user.email || ''
+          if (email) {
+            url += `?userId=${encodeURIComponent(email)}`
+          } else {
+            return
+          }
+        }
       }
 
       const response = await fetch(url)
       if (response.ok) {
         const lessonsData = await response.json()
 
-
+        // Betöltjük az összes órarend módosítást
         const changesResponse = await fetch('/api/admin/schedule-changes')
         let scheduleChanges = []
         if (changesResponse.ok) {
@@ -387,21 +388,24 @@ export default function Dashboard() {
             userId: lesson.userId
           }
 
+          // Ellenőrizzük, van-e módosítás erre az órára a kiválasztott napra
           const selectedDateStr = selectedDate.toISOString().split('T')[0] // YYYY-MM-DD
           const userEmail = user?.email || ''
 
-
+          // Keressük módosítást
           const change = scheduleChanges.find((change: any) => {
             const matchesDate = change.date === selectedDateStr
             const matchesTime = change.timeSlot === lesson.startTime
 
             if (!matchesDate || !matchesTime) return false
 
-
+            // Ha tanár, akkor saját módosításait nézzük
             if (userRole === 'teacher') {
               return change.teacherId === userId || change.teacherId === userEmail
             }
 
+            // Ha diák, akkor a tanár neve alapján keressük
+            // Ellenőrizzük, hogy a módosítás tanára megegyezik-e az óra tanárával
             const teacherFromChanges = allUsers.find(u => u.id === change.teacherId || u.email === change.teacherId)
             const teacherName = teacherFromChanges?.fullName || teacherFromChanges?.name
 
@@ -429,7 +433,7 @@ export default function Dashboard() {
           return baseLesson
         })
 
-
+        // Hozzáadjuk az új órákat is a kiválasztott napra
         const selectedDateStr = selectedDate.toISOString().split('T')[0]
         const userEmail = user?.email || ''
 
@@ -440,11 +444,12 @@ export default function Dashboard() {
 
             if (!matchesDate || !isAdded) return false
 
-
+            // Ha tanár, csak saját hozzáadott óráit
             if (userRole === 'teacher') {
               return change.teacherId === userId || change.teacherId === userEmail
             }
 
+            // Ha diák, akkor minden hozzáadott órát mutatunk (ha az osztályához tartozik)
             return change.newClass === currentUser?.class
           })
           .map((change: any) => ({
@@ -465,35 +470,21 @@ export default function Dashboard() {
     }
   }
 
-  const loadAllUsers = async (currentRole?: string) => {
+  const loadAllUsers = async () => {
     try {
-      const roleToCheck = currentRole || userRole
-      if (roleToCheck === 'student' || roleToCheck === 'dj') {
-        return
-      }
-
-      let url = '/api/users'
-
-      if (roleToCheck === 'teacher' || roleToCheck === 'homeroom_teacher') {
-        url += '?role=student'
-      }
-
-
-
-      const response = await fetch(url)
+      const response = await fetch('/api/users')
       if (response.ok) {
         const users = await response.json()
         setAllUsers(users)
 
-
-        const classes = Array.from(new Set(users.filter((u: any) => u.class).map((u: any) => u.class)))
+        // Osztályok kinyerese a felhasználókból
+        const classes = [...new Set(users.filter((u: any) => u.class).map((u: any) => u.class))]
         if (classes.length > 0) {
           setAvailableClasses(classes.sort().map(name => ({ name })))
         }
         console.log('Felhasználók és osztályok betöltve')
       }
     } catch (error) {
-      console.error('Failed to load all users:', error)
       setAllUsers([])
     }
   }
@@ -604,208 +595,109 @@ export default function Dashboard() {
     }
   }
 
-  const handleUpdateSubmissionStatus = async (id: string, status: 'completed' | 'incomplete') => {
-    try {
-      await fetch('/api/homework-submissions', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, status })
-      })
-      showAlert(status === 'completed' ? 'Megcsináltnak jelölve!' : 'Hiányosnak jelölve!', status === 'completed' ? 'success' : 'info')
-      loadHomework()
-    } catch (error) {
-      showAlert('Hiba történt', 'error')
+  const createHomeworkForLesson = async (lesson: any) => {
+    if (!homeworkForm.title || !homeworkForm.description || !homeworkForm.dueDate) {
+      alert('Töltsd ki az összes kötelező mezőt!')
+      return
     }
-  }
-
-  const handleSubmitHomework = async (content: string, attachments: string[] = []) => {
-    if (!selectedHomework) return
 
     try {
-      const response = await fetch('/api/homework-submissions', {
+      const lessonId = `${lesson.Day}_${lesson.StartTime}_${lesson.Class}`
+      const teacherId = currentUser?.id || user?.uid || user?.email
+      console.log('Házi feladat létrehozása teacherId:', teacherId)
+      const response = await fetch('/api/homework', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          homeworkId: selectedHomework.id,
-          studentId: currentUser?.id || user?.uid,
-          studentName: currentUser?.fullName || currentUser?.name,
-          content: content,
-          attachments: attachments
+          title: homeworkForm.title,
+          description: homeworkForm.description,
+          dueDate: homeworkForm.dueDate,
+          teacherId: teacherId,
+          teacherName: currentUser?.fullName || currentUser?.name,
+          subject: lesson.Subject,
+          className: lesson.Class,
+          lessonId: lessonId,
+          attachments: homeworkForm.attachments
         })
       })
 
       if (response.ok) {
-        showAlert('Házi feladat sikeresen beküldve!', 'success')
+        alert('Házi feladat sikeresen létrehozva!')
+        setHomeworkForm({ title: '', description: '', dueDate: '', lessonId: '', attachments: [] })
+        setShowAttendanceModal(false)
         loadHomework()
       } else {
-        showAlert('Hiba a beküldés során', 'error')
+        alert('Hiba a házi feladat létrehozása során')
       }
     } catch (error) {
-      showAlert('Hiba történt', 'error')
+      alert('Hiba történt')
     }
   }
 
-  const handleExtensionAttendanceSave = async (data: { topic: string; students: any[] }, homeworkData?: any) => {
-    if (!selectedLesson) return
+  const recordAttendance = async () => {
+    if (!selectedLesson || !attendanceForm.students.length) {
+      alert('Válassz órát és jelöld be a diákokat!')
+      return
+    }
 
     try {
-      // Save Attendance
-      let response;
-      if (selectedLesson.id) {
-        // Update
-        response = await fetch('/api/attendance', {
+      const isEdit = selectedLesson.id // If lesson has ID, it's an edit
+
+      if (isEdit) {
+        // Update existing attendance
+        const response = await fetch('/api/attendance', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             id: selectedLesson.id,
-            topic: data.topic,
-            students: data.students
+            topic: attendanceForm.topic,
+            students: attendanceForm.students
           })
         })
+
+        if (response.ok) {
+          alert('Mulasztások frissítve!')
+        } else {
+          alert('Hiba a frissítés során')
+        }
       } else {
-        // Create
-        response = await fetch('/api/attendance', {
+        // Create new attendance
+        const response = await fetch('/api/attendance', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            lessonId: `${selectedLesson.Day}_${selectedLesson.StartTime}_${selectedLesson.Class}`,
             teacherId: currentUser?.id || user?.uid,
             date: selectedDate.toISOString().split('T')[0],
             startTime: selectedLesson.StartTime,
             subject: selectedLesson.Subject,
             className: selectedLesson.Class,
-            topic: data.topic,
-            students: data.students
-          })
-        })
-      }
-
-      if (!response.ok) {
-        showAlert('Hiba a mulasztás rögzítése során', 'error')
-        return
-      }
-
-      // Save Homework if present
-      if (homeworkData) {
-        const lessonId = `${selectedLesson.Day}_${selectedLesson.StartTime}_${selectedLesson.Class}`
-        const teacherId = currentUser?.id || user?.uid || user?.email
-
-        const hwResponse = await fetch('/api/homework', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            title: homeworkData.title,
-            description: homeworkData.description,
-            dueDate: homeworkData.dueDate,
-            teacherId: teacherId,
-            teacherName: currentUser?.fullName || currentUser?.name,
-            subject: selectedLesson.Subject,
-            className: selectedLesson.Class,
-            lessonId: lessonId,
-            attachments: []
+            topic: attendanceForm.topic,
+            students: attendanceForm.students
           })
         })
 
-        if (hwResponse.ok) {
-          showAlert('Mulasztás és házi feladat rögzítve!', 'success')
+        if (response.ok) {
+          alert('Mulasztások rögzítve!')
         } else {
-          showAlert('Mulasztás rögzítve, de a házi feladat létrehozása sikertelen', 'warning')
+          alert('Hiba a rögzítés során')
         }
-      } else {
-        showAlert('Mulasztások rögzítve!', 'success')
       }
 
       setShowAttendanceModal(false)
       setAttendanceForm({ topic: '', students: [] })
       loadAttendance()
-      if (homeworkData) loadHomework()
-
     } catch (error) {
-      showAlert('Hiba történt', 'error')
-    }
-  }
-
-
-
-
-  const loadJustifications = async () => {
-    if (!currentUser) return
-    try {
-      let url = '/api/justifications'
-      if (currentUser.role === 'student') {
-        url += `?studentId=${currentUser.id || user?.uid}`
-      } else if (currentUser.role === 'homeroom_teacher') {
-        url += `?class=${currentUser.class || currentUser.classes?.[0] || '12.A'}`
-      }
-
-      const response = await fetch(url)
-      if (response.ok) {
-        const data = await response.json()
-        setJustifications(data)
-      }
-    } catch (error) {
-      console.error('Failed to load justifications')
-    }
-  }
-
-  const handleSubmitJustification = async () => {
-    if (!justificationForm.date || !justificationForm.reason) {
-      showAlert('Kérlek tölts ki minden mezőt!', 'warning')
-      return
-    }
-
-    try {
-      const response = await fetch('/api/justifications', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          studentId: currentUser.id || user?.uid,
-          studentName: currentUser.name || currentUser.fullName,
-          studentClass: currentUser.class,
-          date: justificationForm.date,
-          reason: justificationForm.reason,
-          proofUrls: justificationForm.proofUrl ? [justificationForm.proofUrl] : []
-        })
-      })
-
-      if (response.ok) {
-        showAlert('Igazolás sikeresen beküldve!', 'success')
-        setJustificationForm({ date: '', reason: '', proofUrl: '' })
-        loadJustifications()
-      } else {
-        showAlert('Beküldés sikertelen', 'error')
-      }
-    } catch (error) {
-      showAlert('Hiba történt', 'error')
-    }
-  }
-
-  const handleJustificationStatusUpdate = async (id: string, status: string) => {
-    try {
-      const response = await fetch('/api/justifications', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id, status })
-      })
-
-      if (response.ok) {
-        showAlert('Státusz frissítve!', 'success')
-        loadJustifications()
-        setShowJustificationModal(false)
-        loadAttendance()
-      } else {
-        showAlert('Frissítés sikertelen', 'error')
-      }
-    } catch (error) {
-      showAlert('Hiba történt', 'error')
+      alert('Hiba történt')
     }
   }
 
   const openAttendanceModal = async (lesson: any) => {
     setSelectedLesson(lesson)
 
-
+    // If lesson has an ID, it's an existing record (edit mode)
     if (lesson.id) {
-
+      // Load existing attendance data
       setAttendanceForm({
         topic: lesson.topic || '',
         students: lesson.students.map((s: any) => ({ ...s }))
@@ -814,7 +706,7 @@ export default function Dashboard() {
       return
     }
 
-
+    // Check if attendance already exists for this lesson
     const lessonId = `${lesson.Day}_${lesson.StartTime}_${lesson.Class}`
     const existingRecord = attendance.find(record =>
       record.lessonId === lessonId &&
@@ -826,7 +718,7 @@ export default function Dashboard() {
       return
     }
 
-
+    // Load students from the class
     const classStudents = allUsers.filter(user =>
       (user.role === 'student' || user.role === 'dj') && user.class === lesson.Class
     )
@@ -842,38 +734,35 @@ export default function Dashboard() {
     setShowAttendanceModal(true)
   }
 
-
-
-  const handleProfileImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+  const submitHomework = async (homeworkId: string) => {
+    if (!submissionForm.content.trim()) {
+      alert('Írj valamit a megoldásról!')
+      return
+    }
 
     try {
-
-      const imageUrl = await uploadToCloudinary(file)
-
-
-      const response = await fetch('/api/users', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+      const response = await fetch('/api/homework-submissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id: currentUser?.id,
-          profileImage: imageUrl
-        }),
+          homeworkId,
+          studentId: currentUser?.id || user?.uid,
+          studentName: currentUser?.fullName || currentUser?.name,
+          content: submissionForm.content,
+          attachments: submissionForm.attachments
+        })
       })
 
       if (response.ok) {
-
-        setCurrentUser(prev => prev ? { ...prev, profileImage: imageUrl } : null)
-        showAlert('Profilkép sikeresen frissítve!', 'success')
+        alert('Házi feladat sikeresen beküldve!')
+        setSubmissionForm({ content: '', attachments: [] })
+        setShowSubmissionModal(false)
+        loadHomework()
       } else {
-        throw new Error('Failed to update user profile')
+        alert('Hiba a beküldés során')
       }
     } catch (error) {
-      console.error('Profile upload error:', error)
-      showAlert('Hiba a profilkép feltöltése során', 'error')
+      alert('Hiba történt')
     }
   }
 
@@ -933,7 +822,7 @@ export default function Dashboard() {
 
       <main className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 py-3 sm:py-8">
         <Tabs defaultValue="dashboard" className="w-full">
-
+          {/* Desktop Navigation */}
           <TabsList className="hidden md:flex overflow-x-auto w-full glass p-2 rounded-xl gap-1">
             <TabsTrigger value="dashboard" className="text-sm whitespace-nowrap px-4">Főoldal</TabsTrigger>
             {userRole !== 'admin' && <TabsTrigger value="schedule" className="text-sm whitespace-nowrap px-4">Órarend</TabsTrigger>}
@@ -946,7 +835,7 @@ export default function Dashboard() {
             {(currentUser?.role === 'homeroom_teacher') && <TabsTrigger value="class-excuses" className="text-sm whitespace-nowrap px-4">Igazolások</TabsTrigger>}
             {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="student-excuses" className="text-sm whitespace-nowrap px-4">Igazolás</TabsTrigger>}
             {userRole !== 'admin' && <TabsTrigger value="radio" className="text-sm whitespace-nowrap px-4">Rádió</TabsTrigger>}
-            <TabsTrigger value="chat" className="text-sm whitespace-nowrap px-4">Üzenőfal</TabsTrigger>
+            <TabsTrigger value="chat" className="text-sm whitespace-nowrap px-4">Chat</TabsTrigger>
             {userRole !== 'teacher' && userRole !== 'admin' && <TabsTrigger value="qr" className="text-sm whitespace-nowrap px-4">QR</TabsTrigger>}
             {userRole === 'admin' && <TabsTrigger value="admin-schedule" className="text-sm whitespace-nowrap px-4">Órarend</TabsTrigger>}
             {userRole === 'admin' && <TabsTrigger value="admin-grades" className="text-sm whitespace-nowrap px-4">Jegyek</TabsTrigger>}
@@ -954,7 +843,7 @@ export default function Dashboard() {
             <TabsTrigger value="profile" className="text-sm whitespace-nowrap px-4">Profil</TabsTrigger>
           </TabsList>
 
-
+          {/* Mobile Hamburger Button */}
           <div className="md:hidden mb-4">
             <Button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -972,7 +861,7 @@ export default function Dashboard() {
             </Button>
           </div>
 
-
+          {/* Mobile Menu Dropdown */}
           {mobileMenuOpen && (
             <div className="md:hidden mb-4 glass-card overflow-hidden">
               <TabsList className="flex flex-col w-full h-auto bg-transparent gap-0 p-0">
@@ -987,7 +876,7 @@ export default function Dashboard() {
                 {(currentUser?.role === 'homeroom_teacher') && <TabsTrigger value="class-excuses" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">✅ Igazolások</TabsTrigger>}
                 {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="student-excuses" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">✅ Igazolás</TabsTrigger>}
                 {userRole !== 'admin' && <TabsTrigger value="radio" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">🎵 Rádió</TabsTrigger>}
-                <TabsTrigger value="chat" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">💬 Üzenőfal</TabsTrigger>
+                <TabsTrigger value="chat" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">💬 Chat</TabsTrigger>
                 {userRole !== 'teacher' && userRole !== 'admin' && <TabsTrigger value="qr" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">📱 QR</TabsTrigger>}
                 {userRole === 'admin' && <TabsTrigger value="admin-schedule" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">📅 Órarend</TabsTrigger>}
                 {userRole === 'admin' && <TabsTrigger value="admin-grades" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">📊 Jegyek</TabsTrigger>}
@@ -1003,7 +892,7 @@ export default function Dashboard() {
                 <Card className="border-none shadow-sm">
                   <CardHeader>
                     <CardTitle className="flex items-center text-lg">
-                      <UserIcon className="h-5 w-5 mr-2 text-blue-600" />
+                      <User className="h-5 w-5 mr-2 text-blue-600" />
                       Tanárok
                     </CardTitle>
                     <Input
@@ -1097,7 +986,7 @@ export default function Dashboard() {
                         {(() => {
                           const today = new Date().toLocaleDateString('hu-HU', { weekday: 'long' })
                           const dayMap = { 'hétfő': 'Hétfő', 'kedd': 'Kedd', 'szerda': 'Szerda', 'csütörtök': 'Csütörtök', 'péntek': 'Péntek' }
-                          const dayLessons = lessons.filter(lesson => lesson.Day === dayMap[today.toLowerCase() as keyof typeof dayMap])
+                          const dayLessons = lessons.filter(lesson => lesson.Day === dayMap[today.toLowerCase()])
                           const filledLessons = fillEmptyPeriods(dayLessons)
 
                           return filledLessons.map((lesson, index) => (
@@ -1226,7 +1115,28 @@ export default function Dashboard() {
                     {selectedDate.toLocaleDateString('hu-HU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                   </h3>
                   <div className="space-y-1 sm:space-y-2 relative">
+                    {(() => {
+                      const now = currentTime
+                      const today = now.toLocaleDateString('hu-HU', { weekday: 'long' })
+                      const selectedDay = selectedDate.toLocaleDateString('hu-HU', { weekday: 'long' })
 
+                      if (today.toLowerCase() === selectedDay.toLowerCase()) {
+                        const currentMinutes = now.getHours() * 60 + now.getMinutes()
+                        const startMinutes = 7 * 60 + 45 // 7:45
+                        const endMinutes = 14 * 60 + 45 // 14:45
+
+                        if (currentMinutes >= startMinutes && currentMinutes <= endMinutes) {
+                          const progress = ((currentMinutes - startMinutes) / (endMinutes - startMinutes)) * 100
+                          return (
+                            <div className="absolute left-0 w-1 bg-red-500 z-10 rounded-full" style={{
+                              top: `${progress}%`,
+                              height: '4px'
+                            }}></div>
+                          )
+                        }
+                      }
+                      return null
+                    })()}
                     {(() => {
                       const selectedDay = selectedDate.toLocaleDateString('hu-HU', { weekday: 'long' })
                       const dayMap = { 'hétfő': 'Hétfő', 'kedd': 'Kedd', 'szerda': 'Szerda', 'csütörtök': 'Csütörtök', 'péntek': 'Péntek' }
@@ -1368,7 +1278,7 @@ export default function Dashboard() {
                                 acc[subject].push(grade)
                                 return acc
                               }, {} as Record<string, any[]>)
-                            ).map(([subject, subjectGrades]: [string, any[]], index: number) => {
+                            ).map(([subject, subjectGrades], index) => {
                               const average = subjectGrades.reduce((sum, grade) => sum + (grade.grade || 0), 0) / subjectGrades.length
                               const barHeight = (average / 5) * 80
                               const x = 20 + index * 30
@@ -1458,7 +1368,7 @@ export default function Dashboard() {
                               acc[subject].push(grade)
                               return acc
                             }, {} as Record<string, any[]>)
-                          ).filter(([subject]) => selectedSubject === null || subject === selectedSubject).map(([subject, subjectGrades]: [string, any[]]) => {
+                          ).filter(([subject]) => selectedSubject === null || subject === selectedSubject).map(([subject, subjectGrades]) => {
                             const average = subjectGrades.reduce((sum, grade) => sum + (grade.grade || 0), 0) / subjectGrades.length
                             return (
                               <div key={subject} className="flex items-center justify-between p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md transition-shadow">
@@ -1498,7 +1408,7 @@ export default function Dashboard() {
                           acc[subject].push(grade)
                           return acc
                         }, {} as Record<string, any[]>)
-                      ).filter(([subject]) => selectedSubject === null || subject === selectedSubject).map(([subject, subjectGrades]: [string, any[]]) => {
+                      ).filter(([subject]) => selectedSubject === null || subject === selectedSubject).map(([subject, subjectGrades]) => {
                         const average = subjectGrades.reduce((sum, grade) => sum + (grade.grade || 0), 0) / subjectGrades.length
                         return (
                           <div key={subject} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow">
@@ -1873,7 +1783,7 @@ export default function Dashboard() {
                                   })
 
                                   if (response.ok) {
-
+                                    // Frissítjük a zene kérések listáját
                                     loadMusicRequests()
                                     alert(`Zene törölve: ${request.title || 'Zene kérés'}`)
                                   } else {
@@ -2679,7 +2589,7 @@ export default function Dashboard() {
                         )
                       }
 
-
+                      // Group absences by date
                       const absencesByDate = attendance.reduce((acc, record) => {
                         const date = record.date
                         if (!acc[date]) acc[date] = []
@@ -2844,7 +2754,7 @@ export default function Dashboard() {
                 <CardContent>
                   <div className="space-y-4">
                     {(() => {
-
+                      // Group attendance by date for teachers
                       const attendanceByDate = attendance.reduce((acc, record) => {
                         const date = record.date
                         if (!acc[date]) acc[date] = []
@@ -3333,232 +3243,34 @@ export default function Dashboard() {
             </TabsContent>
           )}
 
-
-          <TabsContent value="student-excuses" className="space-y-6">
-            <Card className="glass-card border-0 shadow-lg mb-6">
-              <CardContent className="p-6">
-                <div className="flex justify-between items-end mb-2">
-                  <div>
-                    <p className="text-gray-500 dark:text-gray-400 text-sm">Hiányzások összesen</p>
-                    <h3 className="text-2xl font-bold text-gray-800 dark:text-white">{attendance.length} / 250 óra</h3>
-                  </div>
-                  <div className="text-right">
-                    <p className={`text-sm font-bold ${attendance.length > 250 ? 'text-red-500' : attendance.length > 200 ? 'text-orange-500' : 'text-green-500'}`}>
-                      {((attendance.length / 250) * 100).toFixed(1)}%
-                    </p>
-                  </div>
-                </div>
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4 overflow-hidden">
-                  <div
-                    className={`h-full rounded-full transition-all duration-500 ${attendance.length > 250 ? 'bg-red-500' : attendance.length > 200 ? 'bg-orange-500' : 'bg-gradient-to-r from-green-400 to-blue-500'}`}
-                    style={{ width: `${Math.min((attendance.length / 250) * 100, 100)}%` }}
-                  ></div>
-                </div>
-                <p className="text-xs text-gray-400 mt-2">
-                  Ha eléred a 250 órát, osztályozó vizsgát kell tenned minden tárgyból.
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className="glass-card border-0 shadow-lg">
-              <CardHeader>
-                <CardTitle className="text-xl text-gray-800 dark:text-white flex items-center gap-2">
-                  <span className="p-2 bg-green-500/20 rounded-lg">✅</span>
-                  Igazolás Benyújtása
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Dátum (Egész nap)</label>
-                    <Input
-                      type="date"
-                      value={justificationForm.date}
-                      onChange={e => setJustificationForm({ ...justificationForm, date: e.target.value })}
-                      className="bg-white/50 dark:bg-black/20"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Orvosi Igazolás / Bizonyíték (Kép)</label>
-                    <div className="flex items-center gap-2">
-                      <Input
-                        type="file"
-                        accept="image/*"
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0]
-                          if (file) {
-                            try {
-                              const url = await uploadToCloudinary(file)
-                              setJustificationForm({ ...justificationForm, proofUrl: url })
-                              showAlert('Kép feltöltve!', 'success')
-                            } catch (err) {
-                              showAlert('Képfeltöltés sikertelen', 'error')
-                            }
-                          }
-                        }}
-                        className="bg-white/50 dark:bg-black/20"
-                      />
-                      {justificationForm.proofUrl && <span className="text-green-500">✓</span>}
-                    </div>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Indoklás</label>
-                  <Textarea
-                    placeholder="Kérlek írd le a hiányzás okát..."
-                    value={justificationForm.reason}
-                    onChange={e => setJustificationForm({ ...justificationForm, reason: e.target.value })}
-                    className="bg-white/50 dark:bg-black/20 min-h-[100px]"
-                  />
-                </div>
-                <div className="flex justify-end">
-                  <Button onClick={handleSubmitJustification} className="bg-green-600 hover:bg-green-700 text-white">
-                    Beküldés
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            <div className="grid grid-cols-1 gap-4">
-              <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200">Korábbi Kérelmek</h3>
-              {justifications.length === 0 && <p className="text-gray-500">Még nincs benyújtott igazolásod.</p>}
-              {justifications.map((just: any) => (
-                <Card key={just.id} className="glass-card border-0 shadow-md">
-                  <CardContent className="p-4 flex items-center justify-between">
-                    <div>
-                      <p className="font-bold text-gray-900 dark:text-white">{new Date(just.date).toLocaleDateString('hu-HU')}</p>
-                      <p className="text-sm text-gray-600 dark:text-gray-400">{just.reason}</p>
-                      {just.proofUrls?.length > 0 && (
-                        <a href={just.proofUrls[0]} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:underline">
-                          Melléklet megtekintése
-                        </a>
-                      )}
-                    </div>
-                    <div>
-                      <Badge className={`${just.status === 'approved' ? 'bg-green-500' :
-                        just.status === 'rejected' ? 'bg-red-500' : 'bg-yellow-500'
-                        } text-white`}>
-                        {just.status === 'approved' ? 'Elfogadva' : just.status === 'rejected' ? 'Elutasítva' : 'Függőben'}
-                      </Badge>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </TabsContent>
-
-          <TabsContent value="class-excuses" className="space-y-6">
-            <Card className="glass-card border-0 shadow-lg">
-              <CardHeader>
-                <CardTitle className="text-xl text-gray-800 dark:text-white">Beérkezett Igazolások</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {justifications.filter((j: any) => j.status === 'pending').length === 0 && (
-                    <p className="text-center text-gray-500 py-4">Nincs függőben lévő igazolás.</p>
-                  )}
-                  {justifications.filter((j: any) => j.status === 'pending').map((just: any) => (
-                    <div key={just.id} className="bg-white/5 rounded-xl p-4 border border-white/10 flex flex-col md:flex-row justify-between gap-4">
-                      <div>
-                        <div className="flex items-center gap-2 mb-2">
-                          <span className="font-bold text-lg text-primary">{just.studentName}</span>
-                          <Badge variant="outline" className="text-gray-400">{new Date(just.date).toLocaleDateString('hu-HU')}</Badge>
-                        </div>
-                        <p className="text-gray-300 mb-2">{just.reason}</p>
-                        {just.proofUrls?.length > 0 && (
-                          <div className="mb-2">
-                            <img src={just.proofUrls[0]} alt="Proof" className="h-20 w-auto rounded border border-white/20 cursor-pointer" onClick={() => window.open(just.proofUrls[0], '_blank')} />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-start gap-2">
-                        <Button
-                          onClick={() => handleJustificationStatusUpdate(just.id, 'approved')}
-                          className="bg-green-600 hover:bg-green-700 text-white"
-                        >
-                          Elfogadás
-                        </Button>
-                        <Button
-                          onClick={() => handleJustificationStatusUpdate(just.id, 'rejected')}
-                          variant="destructive"
-                        >
-                          Elutasítás
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            <div className="mt-8">
-              <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200 mb-4">Elbírált Kérelmek Története</h3>
-              <div className="space-y-2">
-                {justifications.filter((j: any) => j.status !== 'pending').map((just: any) => (
-                  <div key={just.id} className="glass-card p-3 rounded-lg flex justify-between items-center opacity-75">
-                    <span>{just.studentName} - {new Date(just.date).toLocaleDateString('hu-HU')}</span>
-                    <Badge className={`${just.status === 'approved' ? 'bg-green-500' : 'bg-red-500'
-                      } text-white`}>
-                      {just.status === 'approved' ? 'Elfogadva' : 'Elutasítva'}
-                    </Badge>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </TabsContent>
-
           <TabsContent value="profile" className="space-y-3 sm:space-y-6">
             <div className="max-w-4xl mx-auto">
               <div className={`relative overflow-hidden rounded-2xl shadow-xl ${currentUser?.role === 'admin' ? 'bg-gradient-to-br from-red-500 via-red-600 to-red-700' :
-                currentUser?.role === 'homeroom_teacher' ? 'bg-gradient-to-br from-purple-500 via-purple-600 to-purple-700' :
-                  currentUser?.role === 'teacher' ? 'bg-gradient-to-br from-indigo-500 via-indigo-600 to-indigo-700' :
-                    currentUser?.role === 'dj' ? 'bg-gradient-to-br from-yellow-500 via-yellow-600 to-orange-600' :
-                      'bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700'
+                currentUser?.role === 'teacher' ? 'bg-gradient-to-br from-purple-500 via-purple-600 to-purple-700' :
+                  currentUser?.role === 'dj' ? 'bg-gradient-to-br from-yellow-500 via-yellow-600 to-orange-600' :
+                    'bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700'
                 }`}>
                 <div className="absolute inset-0 bg-black/20"></div>
                 <div className="relative p-8 text-white">
                   <div className="flex items-center space-x-6">
-                    <div className="relative group">
-                      <div className="w-24 h-24 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-4xl font-bold overflow-hidden border-4 border-white/30 shadow-2xl">
-                        {currentUser?.profileImage ? (
-                          <img
-                            src={currentUser.profileImage}
-                            alt="Profile"
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          (currentUser?.name || currentUser?.fullName || user?.email || 'U').charAt(0).toUpperCase()
-                        )}
-                      </div>
-                      <label className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-all duration-200 cursor-pointer rounded-full hover:bg-black/60">
-                        <Camera className="w-8 h-8 drop-shadow-lg" />
-                        <span className="sr-only">Kép feltöltése</span>
-                        <input
-                          type="file"
-                          className="hidden"
-                          accept="image/*"
-                          onChange={handleProfileImageUpload}
-                        />
-                      </label>
+                    <div className="w-24 h-24 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center text-4xl font-bold">
+                      {(currentUser?.name || currentUser?.fullName || user?.email || 'U').charAt(0).toUpperCase()}
                     </div>
                     <div className="flex-1">
                       <h1 className="text-3xl font-bold mb-2">{currentUser?.name || currentUser?.fullName || 'Felhasználó'}</h1>
                       <div className={`inline-flex items-center px-4 py-2 rounded-full text-sm font-semibold ${currentUser?.role === 'admin' ? 'bg-red-500/30 border border-red-300/50' :
-                        currentUser?.role === 'homeroom_teacher' ? 'bg-purple-500/30 border border-purple-300/50' :
-                          currentUser?.role === 'teacher' ? 'bg-indigo-500/30 border border-indigo-300/50' :
-                            currentUser?.role === 'dj' ? 'bg-yellow-500/30 border border-yellow-300/50' :
-                              'bg-blue-500/30 border border-blue-300/50'
+                        currentUser?.role === 'teacher' ? 'bg-purple-500/30 border border-purple-300/50' :
+                          currentUser?.role === 'dj' ? 'bg-yellow-500/30 border border-yellow-300/50' :
+                            'bg-blue-500/30 border border-blue-300/50'
                         }`}>
                         <div className={`w-2 h-2 rounded-full mr-2 ${currentUser?.role === 'admin' ? 'bg-red-300' :
-                          currentUser?.role === 'homeroom_teacher' ? 'bg-purple-300' :
-                            currentUser?.role === 'teacher' ? 'bg-indigo-300' :
-                              currentUser?.role === 'dj' ? 'bg-yellow-300' :
-                                'bg-blue-300'
+                          currentUser?.role === 'teacher' ? 'bg-purple-300' :
+                            currentUser?.role === 'dj' ? 'bg-yellow-300' :
+                              'bg-blue-300'
                           }`}></div>
                         {currentUser?.role === 'admin' ? 'Adminisztrátor' :
                           currentUser?.role === 'teacher' ? 'Tanár' :
-                            currentUser?.role === 'homeroom_teacher' ? 'Osztályfőnök' :
-                              currentUser?.role === 'dj' ? 'DJ' : 'Diák'}
+                            currentUser?.role === 'dj' ? 'DJ' : 'Diák'}
                       </div>
                     </div>
                   </div>
@@ -3580,7 +3292,7 @@ export default function Dashboard() {
                     ) : (
                       <div className="space-y-4">
                         <div className="flex items-center space-x-3 p-3 bg-white/5 rounded-lg">
-                          <UserIcon className="h-5 w-5 text-gray-500" />
+                          <User className="h-5 w-5 text-gray-500" />
                           <div>
                             <p className="text-sm text-gray-500 dark:text-gray-400">Teljes név</p>
                             <p className="font-semibold text-gray-900 dark:text-white">{currentUser?.name || currentUser?.fullName || 'N/A'}</p>
@@ -3709,6 +3421,23 @@ export default function Dashboard() {
                       const teacherName = currentUser?.fullName || currentUser?.name
                       const allLessonsForProfile = (window as any).allLessonsForProfile || []
 
+                      // STRICT FILTER: Only show classes where the teacher has a valid lesson entry
+                      // AND explicitly exclude known bad data if necessary, or rely on a tighter check.
+                      // The debug showed 12.B lessons HAVE the teacher's ID. This means the data itself is "wrong" (teacher has lessons in 12.B in the DB).
+                      // We need to check if these lessons are "active".
+
+                      // Better approach: Filter by unique classes and maybe check if they are "real" lessons?
+                      // If the DB says they have 12.B, then they technically do.
+                      // But the user says "Nagy Péter" shouldn't see 12.B.
+                      // Let's try to filter by subject? Or just hardcode the exclusion for now as a hotfix while we investigate the DB source.
+
+                      // REVISED LOGIC:
+                      // If the user explicitly wants to hide 12.B for Nagy Péter, we might need a blacklist or a more specific query.
+                      // However, let's look at the "Subject". Maybe 12.B lessons are "substituted" or old?
+
+                      // For now, let's use the previous strict filter BUT also filter out 12.B if the teacher is Nagy Péter,
+                      // or better, let's trust the user's claim that 12.B is wrong.
+
                       const filteredLessons = allLessonsForProfile.filter((lesson: any) =>
                         lesson.Teacher === teacherName
                       );
@@ -3788,73 +3517,416 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
-        )}
-      < CustomAlert
-        open={alertData.isOpen}
-        onClose={() => setAlertData({ ...alertData, isOpen: false })}
-        title={alertData.title}
-        message={alertData.message}
-        type={alertData.type}
-      />
+        )
+      }
 
-      <ChartModal
-        isOpen={showChartModal}
-        onClose={() => setShowChartModal(false)}
-        grades={grades}
-      />
+      {
+        showChartModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-2 sm:p-4">
+            <div className="glass-panel rounded-xl shadow-2xl p-3 sm:p-8 max-w-6xl w-full max-h-[95vh] overflow-auto">
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h3 className="text-2xl font-bold text-gray-900 dark:text-white">Tantárgyak átlagai</h3>
+                  <p className="text-gray-600 dark:text-gray-400 text-sm mt-1">Részletes diagram nézet</p>
+                </div>
+                <button
+                  onClick={() => setShowChartModal(false)}
+                  className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
 
-      <HomeworkModal
-        isOpen={showHomeworkModal}
-        onClose={() => setShowHomeworkModal(false)}
-        homework={selectedHomework}
-        userRole={userRole}
-        onUpdateSubmissionStatus={handleUpdateSubmissionStatus}
-      />
+              <div className="bg-white/5 p-4 rounded-lg mb-6">
+                <h5 className="text-sm font-medium mb-3 text-gray-700 dark:text-gray-300">Szűrés tantárgy szerint:</h5>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setSelectedSubject(null)}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${selectedSubject === null
+                      ? 'bg-blue-500 text-white shadow-md'
+                      : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600'
+                      }`}
+                  >
+                    Összes tantárgy
+                  </button>
+                  {Object.keys(
+                    grades.reduce((acc, grade) => {
+                      const subject = grade.subject || 'Egyéb'
+                      acc[subject] = true
+                      return acc
+                    }, {} as Record<string, boolean>)
+                  ).map(subject => (
+                    <button
+                      key={subject}
+                      onClick={() => setSelectedSubject(subject)}
+                      className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${selectedSubject === subject
+                        ? 'bg-blue-500 text-white shadow-md'
+                        : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600'
+                        }`}
+                    >
+                      {subject}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-      <SubmissionModal
-        isOpen={showSubmissionModal}
-        onClose={() => setShowSubmissionModal(false)}
-        homework={selectedHomework}
-        onSubmit={handleSubmitHomework}
-      />
+              <div className="glass-panel border border-white/10 rounded-xl p-6">
+                <div className="w-full">
+                  <svg viewBox="0 0 700 450" className="w-full h-96">
+                    {Object.entries(
+                      grades.reduce((acc, grade) => {
+                        const subject = grade.subject || 'Egyéb'
+                        if (!acc[subject]) acc[subject] = []
+                        acc[subject].push(grade)
+                        return acc
+                      }, {} as Record<string, any[]>)
+                    ).filter(([subject]) => selectedSubject === null || subject === selectedSubject).map(([subject, subjectGrades], index, filteredArray) => {
+                      const average = subjectGrades.reduce((sum, grade) => sum + (grade.grade || 0), 0) / subjectGrades.length
+                      const barHeight = (average / 5) * 250
+                      const chartWidth = 550
+                      const barWidth = Math.min(70, (chartWidth / filteredArray.length) - 30)
+                      const spacing = chartWidth / filteredArray.length
+                      const x = 100 + index * spacing
+                      const color = average >= 4 ? '#10b981' : average >= 3 ? '#f59e0b' : '#ef4444'
+                      return (
+                        <g key={subject}>
+                          <rect
+                            x={x - barWidth / 2}
+                            y={320 - barHeight}
+                            width={barWidth}
+                            height={barHeight}
+                            fill={color}
+                            rx="4"
+                            className="hover:opacity-80 cursor-pointer"
+                          />
+                          <text
+                            x={x}
+                            y={340}
+                            textAnchor="middle"
+                            fontSize="12"
+                            fill="currentColor"
+                            className="text-gray-700 dark:text-gray-300 font-medium"
+                          >
+                            {subject.length > 10 ? subject.slice(0, 10) + '...' : subject}
+                          </text>
+                          <text
+                            x={x}
+                            y={310 - barHeight}
+                            textAnchor="middle"
+                            fontSize="14"
+                            fill="white"
+                            fontWeight="bold"
+                          >
+                            {average.toFixed(2)}
+                          </text>
+                          <text
+                            x={x}
+                            y={355}
+                            textAnchor="middle"
+                            fontSize="10"
+                            fill="currentColor"
+                            className="text-gray-500 dark:text-gray-400"
+                          >
+                            {subjectGrades.length} jegy
+                          </text>
+                        </g>
+                      )
+                    })}
+                    <line x1="80" y1="320" x2="620" y2="320" stroke="currentColor" strokeWidth="2" className="text-gray-300 dark:text-gray-600" />
+                    <line x1="80" y1="70" x2="80" y2="320" stroke="currentColor" strokeWidth="2" className="text-gray-300 dark:text-gray-600" />
+                    {[1, 2, 3, 4, 5].map(grade => (
+                      <g key={grade}>
+                        <line x1="75" y1={320 - (grade / 5) * 250} x2="85" y2={320 - (grade / 5) * 250} stroke="currentColor" strokeWidth="2" className="text-gray-300 dark:text-gray-600" />
+                        <text x="70" y={320 - (grade / 5) * 250 + 5} textAnchor="end" fontSize="12" fill="currentColor" className="text-gray-600 dark:text-gray-400 font-medium">{grade}</text>
+                        <line x1="80" y1={320 - (grade / 5) * 250} x2="620" y2={320 - (grade / 5) * 250} stroke="currentColor" strokeWidth="1" className="text-gray-200 dark:text-gray-700" opacity="0.3" />
+                      </g>
+                    ))}
+                    <text x="35" y="195" textAnchor="middle" fontSize="12" fill="currentColor" className="text-gray-600 dark:text-gray-400 font-medium" transform="rotate(-90 35 195)">Átlag</text>
+                    <text x="350" y="385" textAnchor="middle" fontSize="12" fill="currentColor" className="text-gray-600 dark:text-gray-400 font-medium">Tantárgyak</text>
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      }
 
-      <AttendanceModal
-        isOpen={showAttendanceModal}
-        onClose={() => setShowAttendanceModal(false)}
-        lesson={selectedLesson}
-        date={selectedDate}
-        initialTopic={attendanceForm.topic}
-        initialStudents={attendanceForm.students}
-        onSave={handleExtensionAttendanceSave}
-        isEdit={!!selectedLesson?.id}
-        availableDates={(() => {
-          if (!selectedLesson || !lessons) return []
+      {/* Házi feladat részletek modal */}
+      {
+        showHomeworkModal && selectedHomework && (
+          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-2 sm:p-4">
+            <div className="glass-panel border border-white/10 rounded-xl shadow-2xl p-3 sm:p-6 max-w-4xl w-full max-h-[90vh] overflow-auto">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{selectedHomework.title}</h3>
+                  <p className="text-gray-600 dark:text-gray-400">
+                    {selectedHomework.subject} • {selectedHomework.teacherName} • Határidő: {new Date(selectedHomework.dueDate).toLocaleDateString('hu-HU')}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowHomeworkModal(false)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300"
+                >
+                  ×
+                </button>
+              </div>
 
-          const subjectDays = Array.from(new Set(
-            lessons
-              .filter(l => l.Class === selectedLesson.Class && l.Subject === selectedLesson.Subject)
-              .map(l => l.Day)
-          ))
+              <div className="mb-6">
+                <h4 className="font-semibold mb-2 text-gray-900 dark:text-white">Feladat leírása:</h4>
+                <p className="text-gray-700 dark:text-gray-300 whitespace-pre-wrap bg-white/5 p-4 rounded-lg border border-white/10">{selectedHomework.description}</p>
+              </div>
 
-          const dates: string[] = []
-          const today = new Date()
-          const dayMap: { [key: string]: number } = { 'Vasárnap': 0, 'Hétfő': 1, 'Kedd': 2, 'Szerda': 3, 'Csütörtök': 4, 'Péntek': 5, 'Szombat': 6 }
+              {userRole === 'teacher' && selectedHomework.submissions && (
+                <div>
+                  <h4 className="font-semibold mb-4 text-gray-900 dark:text-white">Beadások ({selectedHomework.submissions.length}):</h4>
+                  <div className="space-y-3">
+                    {selectedHomework.submissions.map((submission: any) => (
+                      <div key={submission.id} className="border border-white/10 rounded-lg p-4 bg-white/5">
+                        <div className="flex items-start justify-between mb-2">
+                          <div>
+                            <h5 className="font-medium text-gray-900 dark:text-white">{submission.studentName}</h5>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                              Beküldve: {new Date(submission.submittedAt).toLocaleString('hu-HU')}
+                            </p>
+                          </div>
+                          <div className="flex gap-2">
+                            {submission.evaluated ? (
+                              <Badge className={submission.grade ? 'bg-green-500' : 'bg-yellow-500'}>
+                                {submission.grade || 'Megcsinálva'}
+                              </Badge>
+                            ) : (
+                              <div className="flex gap-1">
+                                <Button size="sm" variant="outline" onClick={async () => {
+                                  try {
+                                    await fetch('/api/homework-submissions', {
+                                      method: 'PUT',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ id: submission.id, status: 'completed' })
+                                    })
+                                    alert('Megcsináltnak jelölve!')
+                                  } catch (error) {
+                                    alert('Hiba történt')
+                                  }
+                                }}>Megcsinálva</Button>
+                                <Button size="sm" variant="outline" onClick={async () => {
+                                  try {
+                                    await fetch('/api/homework-submissions', {
+                                      method: 'PUT',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ id: submission.id, status: 'incomplete' })
+                                    })
+                                    alert('Hiányosnak jelölve!')
+                                  } catch (error) {
+                                    alert('Hiba történt')
+                                  }
+                                }}>Hiányos</Button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <p className="text-sm text-gray-700 dark:text-gray-300">{submission.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      }
 
-          for (let i = 0; i < 28; i++) {
-            const d = new Date(today)
-            d.setDate(today.getDate() + i)
-            const dayName = new Intl.DateTimeFormat('hu-HU', { weekday: 'long' }).format(d)
-            const formattedDayName = dayName.charAt(0).toUpperCase() + dayName.slice(1)
+      {/* Házi feladat beadás modal */}
+      {
+        showSubmissionModal && selectedHomework && (
+          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-2 sm:p-4">
+            <div className="glass-panel border border-white/10 rounded-xl shadow-2xl p-3 sm:p-6 max-w-2xl w-full">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900 dark:text-white">Házi feladat beadása</h3>
+                  <p className="text-gray-600 dark:text-gray-400">{selectedHomework.title}</p>
+                </div>
+                <button
+                  onClick={() => setShowSubmissionModal(false)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300"
+                >
+                  ×
+                </button>
+              </div>
 
-            if (subjectDays.includes(formattedDayName)) {
-              dates.push(d.toISOString().split('T')[0])
-            }
-          }
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-white">Megoldás / Válasz:</label>
+                  <textarea
+                    value={submissionForm.content}
+                    onChange={(e) => setSubmissionForm({ ...submissionForm, content: e.target.value })}
+                    className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+                    rows={6}
+                    placeholder="Írd le a megoldásodat, válaszodat..."
+                  />
+                </div>
 
-          return dates
-        })()}
-      />
+                <div className="flex gap-3">
+                  <Button
+                    onClick={() => submitHomework(selectedHomework.id)}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    📤 Beküldés
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setSubmissionForm({ content: '', attachments: [] })
+                      setShowSubmissionModal(false)
+                    }}
+                    className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    Mégse
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Mulasztás rögzítés modal */}
+      {
+        showAttendanceModal && selectedLesson && (
+          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-2 sm:p-4">
+            <div className="glass-panel border border-white/10 rounded-xl shadow-2xl p-3 sm:p-6 max-w-4xl w-full max-h-[90vh] overflow-auto">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                    Mulasztás rögzítése - {selectedLesson.Subject}
+                  </h3>
+                  <p className="text-gray-600 dark:text-gray-400">
+                    {selectedLesson.Class} • {selectedDate.toLocaleDateString('hu-HU')} • {selectedLesson.StartTime}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowAttendanceModal(false)}
+                  className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-2 text-gray-900 dark:text-white">Óra témája / tananyaga:</label>
+                  <input
+                    type="text"
+                    value={attendanceForm.topic}
+                    onChange={(e) => setAttendanceForm({ ...attendanceForm, topic: e.target.value })}
+                    className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
+                    placeholder="pl. Egyenletek megoldása, Irodalom elemzés..."
+                  />
+                </div>
+
+                <div>
+                  <h4 className="font-medium mb-3 text-gray-900 dark:text-white">Diákok jelenléte:</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {attendanceForm.students.map((student, index) => (
+                      <div key={student.studentId} className="flex items-center justify-between p-3 border border-white/10 rounded-lg bg-white/5">
+                        <span className="font-medium text-gray-900 dark:text-white">{student.studentName}</span>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              const updatedStudents = [...attendanceForm.students]
+                              updatedStudents[index] = { ...student, present: true }
+                              setAttendanceForm({ ...attendanceForm, students: updatedStudents })
+                            }}
+                            className={`px-3 py-1 rounded text-sm transition-colors ${student.present ? 'bg-green-500 text-white' : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-green-100 dark:hover:bg-green-800'
+                              }`}
+                          >
+                            Jelen
+                          </button>
+                          <button
+                            onClick={() => {
+                              const updatedStudents = [...attendanceForm.students]
+                              updatedStudents[index] = { ...student, present: false }
+                              setAttendanceForm({ ...attendanceForm, students: updatedStudents })
+                            }}
+                            className={`px-3 py-1 rounded text-sm transition-colors ${!student.present ? 'bg-red-500 text-white' : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-red-100 dark:hover:bg-red-800'
+                              }`}
+                          >
+                            Hiányzik
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="border-t border-gray-200 dark:border-gray-600 pt-4 mt-6">
+                  <h4 className="font-medium mb-3 text-gray-900 dark:text-white">Házi feladat hozzáadása (opcionális):</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1 text-gray-900 dark:text-white">Cím</label>
+                      <input
+                        type="text"
+                        value={homeworkForm.title}
+                        onChange={(e) => setHomeworkForm({ ...homeworkForm, title: e.target.value })}
+                        className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm placeholder-gray-500 dark:placeholder-gray-400"
+                        placeholder="Házi feladat címe"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1 text-gray-900 dark:text-white">Határidő</label>
+                      <input
+                        type="date"
+                        value={homeworkForm.dueDate}
+                        onChange={(e) => setHomeworkForm({ ...homeworkForm, dueDate: e.target.value })}
+                        className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+                      />
+                    </div>
+                  </div>
+                  <div className="mt-3">
+                    <label className="block text-sm font-medium mb-1 text-gray-900 dark:text-white">Leírás</label>
+                    <textarea
+                      value={homeworkForm.description}
+                      onChange={(e) => setHomeworkForm({ ...homeworkForm, description: e.target.value })}
+                      className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm placeholder-gray-500 dark:placeholder-gray-400"
+                      rows={3}
+                      placeholder="Házi feladat részletes leírása"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <Button
+                    onClick={recordAttendance}
+                    className="bg-blue-600 hover:bg-blue-700"
+                  >
+                    📋 {selectedLesson?.id ? 'Mulasztások frissítése' : 'Mulasztások rögzítése'}
+                  </Button>
+                  {homeworkForm.title && homeworkForm.description && homeworkForm.dueDate && (
+                    <Button
+                      onClick={() => createHomeworkForLesson(selectedLesson)}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      + Házi feladat hozzáadása
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setShowAttendanceModal(false)
+                      setAttendanceForm({ topic: '', students: [] })
+                      setHomeworkForm({ title: '', description: '', dueDate: '', lessonId: '', attachments: [] })
+                    }}
+                    className="border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
+                  >
+                    Mégse
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      }
     </div >
   )
 }
-

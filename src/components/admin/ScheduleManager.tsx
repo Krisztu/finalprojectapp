@@ -26,7 +26,7 @@ export default function ScheduleManager({ allUsers, availableClasses }: Schedule
 
   const loadSchedule = async () => {
     if (!selectedUser && !selectedClass) return
-    
+
     setLoading(true)
     try {
       let url = '/api/lessons'
@@ -35,14 +35,14 @@ export default function ScheduleManager({ allUsers, availableClasses }: Schedule
       } else if (selectedType === 'class' && selectedClass) {
         url += `?class=${encodeURIComponent(selectedClass)}`
       }
-      
+
       const response = await fetch(url)
       if (response.ok) {
         const lessons = await response.json()
         setSchedule(lessons)
       }
-      
-      // Load schedule changes for the selected date
+
+
       const changesResponse = await fetch(`/api/admin/schedule-changes?date=${selectedDate}`)
       if (changesResponse.ok) {
         const changes = await changesResponse.json()
@@ -65,14 +65,14 @@ export default function ScheduleManager({ allUsers, availableClasses }: Schedule
       const changeDate = new Date(change.date)
       const currentDate = new Date(selectedDate)
       const changeDayName = changeDate.toLocaleDateString('hu-HU', { weekday: 'long' })
-      const dayMap = { 'hétfő': 'Hétfő', 'kedd': 'Kedd', 'szerda': 'Szerda', 'csütörtök': 'Csütörtök', 'péntek': 'Péntek' }
+      const dayMap: Record<string, string> = { 'hétfő': 'Hétfő', 'kedd': 'Kedd', 'szerda': 'Szerda', 'csütörtök': 'Csütörtök', 'péntek': 'Péntek' }
       return dayMap[changeDayName.toLowerCase()] === day && changeDate.toDateString() === currentDate.toDateString()
     })
 
     return timeSlots.map(time => {
       const lesson = dayLessons.find(l => l.startTime === time)
       const change = dayChanges.find(c => c.timeSlot === time)
-      
+
       if (change) {
         if (change.changeType === 'cancelled') {
           return { ...lesson, status: 'cancelled', change }
@@ -98,7 +98,7 @@ export default function ScheduleManager({ allUsers, availableClasses }: Schedule
           }
         }
       }
-      
+
       return lesson || { startTime: time, status: 'free' }
     })
   }
@@ -106,7 +106,7 @@ export default function ScheduleManager({ allUsers, availableClasses }: Schedule
   const handleLessonAction = async (day: string, timeSlot: string, action: 'cancel' | 'substitute' | 'add', lessonData?: any) => {
     try {
       const targetUserId = selectedType === 'user' ? selectedUser : null
-      
+
       const changeData = {
         teacherId: targetUserId || 'class_' + selectedClass,
         date: selectedDate,
@@ -244,93 +244,93 @@ export default function ScheduleManager({ allUsers, availableClasses }: Schedule
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-6 gap-2">
-                <div className="font-semibold text-center py-3 bg-gray-100 dark:bg-gray-800 rounded-lg text-gray-700 dark:text-gray-300">
-                  Időpont
+              <div className="font-semibold text-center py-3 bg-gray-100 dark:bg-gray-800 rounded-lg text-gray-700 dark:text-gray-300">
+                Időpont
+              </div>
+              {days.map(day => (
+                <div key={day} className="font-semibold text-center py-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-blue-700 dark:text-blue-300">
+                  {day}
                 </div>
-                {days.map(day => (
-                  <div key={day} className="font-semibold text-center py-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-blue-700 dark:text-blue-300">
-                    {day}
+              ))}
+
+              {timeSlots.map(time => (
+                <>
+                  <div key={time} className="flex items-center justify-center font-medium text-sm bg-gray-100 dark:bg-gray-800 rounded-lg p-3 text-gray-700 dark:text-gray-300">
+                    {time}
                   </div>
-                ))}
-                
-                {timeSlots.map(time => (
-                  <>
-                    <div key={time} className="flex items-center justify-center font-medium text-sm bg-gray-100 dark:bg-gray-800 rounded-lg p-3 text-gray-700 dark:text-gray-300">
-                      {time}
-                    </div>
-                    {days.map(day => {
-                      const lesson = getDaySchedule(day).find(l => l.startTime === time)
-                      return (
-                        <div key={`${day}-${time}`} className={`p-3 rounded-lg border-2 min-h-[100px] transition-all hover:shadow-md ${getLessonStatusColor(lesson?.status || 'normal')}`}>
-                          {lesson?.status === 'free' ? (
-                            <div className="flex items-center justify-center h-full">
+                  {days.map(day => {
+                    const lesson = getDaySchedule(day).find(l => l.startTime === time)
+                    return (
+                      <div key={`${day}-${time}`} className={`p-3 rounded-lg border-2 min-h-[100px] transition-all hover:shadow-md ${getLessonStatusColor(lesson?.status || 'normal')}`}>
+                        {lesson?.status === 'free' ? (
+                          <div className="flex items-center justify-center h-full">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                const subject = prompt('Tantárgy:')
+                                const teacher = prompt('Tanár:')
+                                const room = prompt('Terem:')
+                                if (subject && teacher) {
+                                  handleLessonAction(day, time, 'add', { subject, teacher, class: selectedClass, room })
+                                }
+                              }}
+                              className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full p-2"
+                            >
+                              <Plus className="h-5 w-5" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <div className="font-semibold text-sm leading-tight">{lesson?.subject}</div>
+                            <div className="text-xs text-gray-600 dark:text-gray-400">{lesson?.teacherName}</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-500">{lesson?.room}</div>
+                            {lesson?.status && lesson.status !== 'normal' && (
+                              <Badge variant="secondary" className="text-xs">
+                                {lesson.status === 'cancelled' ? 'Elmaradt' :
+                                  lesson.status === 'substituted' ? 'Helyettesítés' :
+                                    lesson.status === 'added' ? 'Új óra' : ''}
+                              </Badge>
+                            )}
+                            <div className="flex gap-1 mt-2">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => handleLessonAction(day, time, 'cancel')}
+                                className="p-1 h-7 w-7 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/20"
+                                title="Óra lemondása"
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
                               <Button
                                 size="sm"
                                 variant="ghost"
                                 onClick={() => {
-                                  const subject = prompt('Tantárgy:')
-                                  const teacher = prompt('Tanár:')
-                                  const room = prompt('Terem:')
+                                  const subject = prompt('Új tantárgy:', lesson?.subject)
+                                  const teacher = prompt('Új tanár:', lesson?.teacherName)
+                                  const room = prompt('Új terem:', lesson?.room)
                                   if (subject && teacher) {
-                                    handleLessonAction(day, time, 'add', { subject, teacher, class: selectedClass, room })
+                                    handleLessonAction(day, time, 'substitute', { subject, teacher, class: selectedClass, room })
                                   }
                                 }}
-                                className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full p-2"
+                                className="p-1 h-7 w-7 hover:bg-yellow-100 hover:text-yellow-600 dark:hover:bg-yellow-900/20"
+                                title="Óra módosítása"
                               >
-                                <Plus className="h-5 w-5" />
+                                <Edit className="h-3 w-3" />
                               </Button>
                             </div>
-                          ) : (
-                            <div className="space-y-2">
-                              <div className="font-semibold text-sm leading-tight">{lesson?.subject}</div>
-                              <div className="text-xs text-gray-600 dark:text-gray-400">{lesson?.teacherName}</div>
-                              <div className="text-xs text-gray-500 dark:text-gray-500">{lesson?.room}</div>
-                              {lesson?.status && lesson.status !== 'normal' && (
-                                <Badge variant="secondary" className="text-xs">
-                                  {lesson.status === 'cancelled' ? 'Elmaradt' : 
-                                   lesson.status === 'substituted' ? 'Helyettesítés' : 
-                                   lesson.status === 'added' ? 'Új óra' : ''}
-                                </Badge>
-                              )}
-                              <div className="flex gap-1 mt-2">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => handleLessonAction(day, time, 'cancel')}
-                                  className="p-1 h-7 w-7 hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/20"
-                                  title="Óra lemondása"
-                                >
-                                  <X className="h-3 w-3" />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    const subject = prompt('Új tantárgy:', lesson?.subject)
-                                    const teacher = prompt('Új tanár:', lesson?.teacherName)
-                                    const room = prompt('Új terem:', lesson?.room)
-                                    if (subject && teacher) {
-                                      handleLessonAction(day, time, 'substitute', { subject, teacher, class: selectedClass, room })
-                                    }
-                                  }}
-                                  className="p-1 h-7 w-7 hover:bg-yellow-100 hover:text-yellow-600 dark:hover:bg-yellow-900/20"
-                                  title="Óra módosítása"
-                                >
-                                  <Edit className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </>
-                ))}
-              </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </>
+              ))}
+            </div>
           </CardContent>
         </Card>
       )}
-      
+
       {!selectedUser && !selectedClass && (
         <Card className="bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 shadow-sm">
           <CardContent className="py-12">

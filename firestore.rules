@@ -1,223 +1,374 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // =====================================================================
+    // OPTIMIZED HELPER FUNCTIONS - Using Custom Claims (No DB Reads!)
+    // =====================================================================
     
-    // Helper functions for authentication and authorization
     function isAuthenticated() {
       return request.auth != null;
     }
-    
-    function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+
+    // Role checks using custom claims from token (NO database reads!)
+    function getRole() {
+      return request.auth.token.role;
     }
-    
+
+    function isAdmin() {
+      return isAuthenticated() && request.auth.token.role == 'admin';
+    }
+
+    function isTeacher() {
+      return isAuthenticated() && 
+        (request.auth.token.role == 'teacher' || 
+         request.auth.token.role == 'homeroom_teacher');
+    }
+
+    function isHomeroomTeacher() {
+      return isAuthenticated() && request.auth.token.role == 'homeroom_teacher';
+    }
+
+    function isStudent() {
+      return isAuthenticated() && 
+        (request.auth.token.role == 'student' || 
+         request.auth.token.role == 'dj');
+    }
+
+    function isDJ() {
+      return isAuthenticated() && request.auth.token.role == 'dj';
+    }
+
+    function hasRole(role) {
+      return isAuthenticated() && request.auth.token.role == role;
+    }
+
+    // Validation functions
     function isValidRole(role) {
       return role in ['admin', 'teacher', 'homeroom_teacher', 'student', 'dj'];
     }
-    
+
     function isValidGrade(grade) {
       return grade is int && grade >= 1 && grade <= 5;
     }
-    
-    // Users collection - User profile management
+
+    function isValidEmail(email) {
+      return email is string && email.size() > 0 && email.matches('.*@.*');
+    }
+
+    // =====================================================================
+    // USERS COLLECTION - Profile Management
+    // =====================================================================
     match /users/{userId} {
-      // Read: All authenticated users can read user profiles (needed for app functionality)
+      // Read: All authenticated users (needed for UI - teacher names, student lists, etc.)
       allow read: if isAuthenticated();
-      
-      // Create: All authenticated users can create profiles during registration
-      allow create: if isAuthenticated() && isValidRole(request.resource.data.role);
-      
-      // Update: Users can update their own profile, or any authenticated user (for admin operations)
-      allow update: if isAuthenticated();
-      
-      // Delete: All authenticated users can delete (admin operations through API)
-      allow delete: if isAuthenticated();
+
+      // Create: Only during registration with valid data
+      allow create: if isAuthenticated() && 
+                       request.auth.uid == userId &&
+                       isValidRole(request.resource.data.role) &&
+                       isValidEmail(request.resource.data.email) &&
+                       request.resource.data.fullName is string &&
+                       request.resource.data.fullName.size() > 0;
+
+      // Update: Own profile or admin
+      allow update: if (isAuthenticated() && request.auth.uid == userId) || isAdmin();
+
+      // Delete: Admin only
+      allow delete: if isAdmin();
     }
-    
-    // Lessons collection - Schedule management
+
+    // =====================================================================
+    // LESSONS COLLECTION - Schedule Management
+    // =====================================================================
     match /lessons/{lessonId} {
-      // Read: All authenticated users can read lessons (needed for schedule display)
+      // Read: All authenticated users (schedule display)
       allow read: if isAuthenticated();
-      
-      // Create: All authenticated users can create lessons (admin/teacher operations through API)
-      allow create: if isAuthenticated();
-      
-      // Update: All authenticated users can update lessons (admin/teacher operations through API)
-      allow update: if isAuthenticated();
-      
-      // Delete: All authenticated users can delete lessons (admin operations through API)
-      allow delete: if isAuthenticated();
+
+      // Create: Teachers only, must set their own userId
+      allow create: if isTeacher() &&
+                       request.resource.data.userId == request.auth.uid &&
+                       request.resource.data.day is string &&
+                       request.resource.data.startTime is string &&
+                       request.resource.data.subject is string &&
+                       request.resource.data.teacherName is string &&
+                       request.resource.data.className is string;
+
+      // Update: Own lessons or admin
+      allow update: if (isTeacher() && resource.data.userId == request.auth.uid) || isAdmin();
+
+      // Delete: Own lessons or admin
+      allow delete: if (isTeacher() && resource.data.userId == request.auth.uid) || isAdmin();
     }
-    
-    // Grades collection - Grade management
+
+    // =====================================================================
+    // GRADES COLLECTION - Grade Management
+    // =====================================================================
     match /grades/{gradeId} {
-      // Read: All authenticated users can read grades (role-based filtering in API)
+      // Read: All authenticated users
       allow read: if isAuthenticated();
-      
-      // Create: All authenticated users can create grades (teacher operations through API)
-      allow create: if isAuthenticated() && isValidGrade(request.resource.data.grade);
-      
-      // Update: All authenticated users can update grades (teacher/admin operations through API)
-      allow update: if isAuthenticated() && isValidGrade(request.resource.data.grade);
-      
-      // Delete: All authenticated users can delete grades (teacher/admin operations through API)
-      allow delete: if isAuthenticated();
+
+      // Create: Teachers only with valid grade value
+      allow create: if isTeacher() &&
+                       isValidGrade(request.resource.data.grade) &&
+                       request.resource.data.studentName is string &&
+                       request.resource.data.subject is string &&
+                       request.resource.data.title is string &&
+                       request.resource.data.teacherName is string;
+
+      // Update: Teachers only (own grades) with valid grade
+      allow update: if isTeacher() &&
+                       resource.data.teacherName == request.auth.token.name &&
+                       isValidGrade(request.resource.data.get('grade', resource.data.grade));
+
+      // Delete: Admin only
+      allow delete: if isAdmin();
     }
-    
-    // Homework collection - Homework assignments
+
+    // =====================================================================
+    // HOMEWORK COLLECTION - Assignment Management
+    // =====================================================================
     match /homework/{homeworkId} {
-      // Read: All authenticated users can read homework (role-based filtering in API)
+      // Read: All authenticated users
       allow read: if isAuthenticated();
-      
-      // Create: All authenticated users can create homework (teacher operations through API)
-      allow create: if isAuthenticated();
-      
-      // Update: All authenticated users can update homework (teacher/admin operations through API)
-      allow update: if isAuthenticated();
-      
-      // Delete: All authenticated users can delete homework (teacher/admin operations through API)
-      allow delete: if isAuthenticated();
+
+      // Create: Teachers only
+      allow create: if isTeacher() &&
+                       request.resource.data.teacherId == request.auth.uid &&
+                       request.resource.data.title is string &&
+                       request.resource.data.title.size() > 0 &&
+                       request.resource.data.description is string &&
+                       request.resource.data.dueDate is string &&
+                       request.resource.data.className is string;
+
+      // Update: Own homework or admin
+      allow update: if (isTeacher() && resource.data.teacherId == request.auth.uid) || isAdmin();
+
+      // Delete: Own homework or admin
+      allow delete: if (isTeacher() && resource.data.teacherId == request.auth.uid) || isAdmin();
     }
-    
-    // Homework submissions collection
+
+    // =====================================================================
+    // HOMEWORK SUBMISSIONS - Student Submissions
+    // =====================================================================
     match /homework-submissions/{submissionId} {
-      // Read: All authenticated users can read submissions (role-based filtering in API)
+      // Read: All authenticated (teachers need to see submissions)
       allow read: if isAuthenticated();
-      
-      // Create: All authenticated users can create submissions (student operations through API)
-      allow create: if isAuthenticated();
-      
-      // Update: All authenticated users can update submissions (student/teacher operations through API)
-      allow update: if isAuthenticated();
-      
-      // Delete: All authenticated users can delete submissions (student/teacher/admin operations through API)
-      allow delete: if isAuthenticated();
+
+      // Create: Students only, must be their own submission
+      allow create: if isStudent() &&
+                       request.resource.data.studentId == request.auth.uid &&
+                       request.resource.data.homeworkId is string &&
+                       request.resource.data.studentName is string;
+
+      // Update: Own submission (student) or any teacher (for grading) or admin
+      allow update: if (isStudent() && resource.data.studentId == request.auth.uid) ||
+                       isTeacher() ||
+                       isAdmin();
+
+      // Delete: Admin only
+      allow delete: if isAdmin();
     }
-    
-    // Attendance collection - Attendance records
+
+    // =====================================================================
+    // ATTENDANCE COLLECTION - Class Attendance Records
+    // =====================================================================
     match /attendance/{attendanceId} {
-      // Read: All authenticated users can read attendance (role-based filtering in API)
+      // Read: All authenticated users
       allow read: if isAuthenticated();
-      
-      // Create: All authenticated users can create attendance (teacher operations through API)
-      allow create: if isAuthenticated();
-      
-      // Update: All authenticated users can update attendance (teacher/admin operations through API)
-      allow update: if isAuthenticated();
-      
-      // Delete: All authenticated users can delete attendance (admin operations through API)
-      allow delete: if isAuthenticated();
+
+      // Create: Teachers only
+      allow create: if isTeacher() &&
+                       request.resource.data.teacherId == request.auth.uid &&
+                       request.resource.data.lessonId is string &&
+                       request.resource.data.date is string &&
+                       request.resource.data.className is string &&
+                       request.resource.data.students is list;
+
+      // Update: Own records or admin
+      allow update: if (isTeacher() && resource.data.teacherId == request.auth.uid) || isAdmin();
+
+      // Delete: Admin only
+      allow delete: if isAdmin();
     }
-    
-    // Absences collection - Individual absence records
+
+    // =====================================================================
+    // ABSENCES COLLECTION - Individual Absence Records
+    // =====================================================================
     match /absences/{absenceId} {
-      // Read: All authenticated users can read absences (role-based filtering in API)
+      // Read: All authenticated users
       allow read: if isAuthenticated();
-      
-      // Create: All authenticated users can create absences (teacher operations through API)
-      allow create: if isAuthenticated();
-      
-      // Update: All authenticated users can update absences (teacher/homeroom teacher operations through API)
-      allow update: if isAuthenticated();
-      
-      // Delete: All authenticated users can delete absences (admin operations through API)
-      allow delete: if isAuthenticated();
+
+      // Create: Teachers only (auto-created from attendance)
+      allow create: if isTeacher() &&
+                       request.resource.data.teacherId == request.auth.uid &&
+                       request.resource.data.studentId is string &&
+                       request.resource.data.studentName is string &&
+                       request.resource.data.date is string;
+
+      // Update: Teachers or admin (for excusing absences)
+      allow update: if isTeacher() || isAdmin();
+
+      // Delete: Admin only
+      allow delete: if isAdmin();
     }
-    
-    // Excuses collection - Excuse requests
+
+    // =====================================================================
+    // EXCUSES COLLECTION - Student Excuse Requests
+    // =====================================================================
     match /excuses/{excuseId} {
-      // Read: All authenticated users can read excuses (role-based filtering in API)
-      allow read: if isAuthenticated();
-      
-      // Create: All authenticated users can create excuses (student operations through API)
-      allow create: if isAuthenticated();
-      
-      // Update: All authenticated users can update excuses (homeroom teacher/admin operations through API)
-      allow update: if isAuthenticated();
-      
-      // Delete: All authenticated users can delete excuses (admin operations through API)
-      allow delete: if isAuthenticated();
+      // Read: Teachers, homeroom teachers, and admin (students see their own via studentId filter)
+      allow read: if isTeacher() || isAdmin();
+
+      // Create: Students only, must be their own excuse
+      allow create: if isStudent() &&
+                       request.resource.data.studentId == request.auth.uid &&
+                       request.resource.data.excuseType is string &&
+                       request.resource.data.absenceIds is list;
+
+      // Update: Teachers and admin (for reviewing excuses)
+      allow update: if isTeacher() || isAdmin();
+
+      // Delete: Teachers and admin
+      allow delete: if isTeacher() || isAdmin();
     }
-    
-    // Chat messages collection - School chat/bulletin board
+
+    // =====================================================================
+    // CHAT MESSAGES - School Bulletin Board
+    // =====================================================================
     match /chatMessages/{messageId} {
-      // Read: All authenticated users can read chat messages
+      // Read: All authenticated users
       allow read: if isAuthenticated();
-      
-      // Create: All authenticated users can create messages
-      allow create: if isAuthenticated();
-      
-      // Update: All authenticated users can update messages (user/admin operations through API)
-      allow update: if isAuthenticated();
-      
-      // Delete: All authenticated users can delete messages (user/admin operations through API)
-      allow delete: if isAuthenticated();
+
+      // Create: All authenticated users
+      allow create: if isAuthenticated() &&
+                       request.resource.data.userId == request.auth.uid &&
+                       request.resource.data.message is string &&
+                       request.resource.data.message.size() > 0 &&
+                       request.resource.data.message.size() <= 1000 &&
+                       request.resource.data.userName is string;
+
+      // Update: Own messages or admin
+      allow update: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();
+
+      // Delete: Own messages or admin
+      allow delete: if (isAuthenticated() && resource.data.userId == request.auth.uid) || isAdmin();
     }
-    
-    // Music requests collection - School radio requests
+
+    // =====================================================================
+    // MUSIC REQUESTS - DJ Feature
+    // =====================================================================
     match /musicRequests/{requestId} {
-      // Read: All authenticated users can read music requests
+      // Read: All authenticated users
       allow read: if isAuthenticated();
-      
-      // Create: All authenticated users can create music requests
-      allow create: if isAuthenticated();
-      
-      // Update: All authenticated users can update music requests (user/DJ/admin operations through API)
-      allow update: if isAuthenticated();
-      
-      // Delete: All authenticated users can delete music requests (user/DJ/admin operations through API)
-      allow delete: if isAuthenticated();
+
+      // Create: Students only
+      allow create: if isStudent() &&
+                       request.resource.data.userId == request.auth.uid &&
+                       request.resource.data.url is string &&
+                       request.resource.data.platform is string;
+
+      // Update: DJ or admin (for managing requests)
+      allow update: if isDJ() || isAdmin();
+
+      // Delete: DJ or admin
+      allow delete: if isDJ() || isAdmin();
     }
-    
-    // Access logs collection - QR code access logs
-    match /accessLogs/{logId} {
-      // Read: All authenticated users can read access logs
-      allow read: if isAuthenticated();
-      
-      // Create: All authenticated users can create access logs (system operations through API)
-      allow create: if isAuthenticated();
-      
-      // Update: All authenticated users can update access logs (admin operations through API)
-      allow update: if isAuthenticated();
-      
-      // Delete: All authenticated users can delete access logs (admin operations through API)
-      allow delete: if isAuthenticated();
-    }
-    
-    // Schedule changes collection - Temporary schedule modifications
+
+    // =====================================================================
+    // SCHEDULE CHANGES - Temporary Schedule Modifications
+    // =====================================================================
     match /scheduleChanges/{changeId} {
-      // Read: All authenticated users can read schedule changes
+      // Read: All authenticated users (need to see schedule changes)
       allow read: if isAuthenticated();
-      
-      // Create: All authenticated users can create schedule changes (admin operations through API)
-      allow create: if isAuthenticated();
-      
-      // Update: All authenticated users can update schedule changes (admin operations through API)
-      allow update: if isAuthenticated();
-      
-      // Delete: All authenticated users can delete schedule changes (admin operations through API)
-      allow delete: if isAuthenticated();
+
+      // Create: Admin only (or teachers for their own lessons - future enhancement)
+      allow create: if isAdmin() &&
+                       request.resource.data.teacherId is string &&
+                       request.resource.data.date is string &&
+                       request.resource.data.timeSlot is string &&
+                       request.resource.data.changeType in ['cancelled', 'substituted', 'added'];
+
+      // Update: Admin only
+      allow update: if isAdmin();
+
+      // Delete: Admin only
+      allow delete: if isAdmin();
     }
-    
-    // System logs collection - Application logs
+
+    // =====================================================================
+    // ACCESS COLLECTION - QR Code Entry/Exit Logs
+    // =====================================================================
+    match /access/{accessId} {
+      // Read: Admin only
+      allow read: if isAdmin();
+
+      // Create: Authenticated users (QR scan system)
+      allow create: if isAuthenticated() &&
+                       request.resource.data.studentId is string &&
+                       request.resource.data.date is string;
+
+      // Update: Admin only
+      allow update: if isAdmin();
+
+      // Delete: Admin only
+      allow delete: if isAdmin();
+    }
+
+    // =====================================================================
+    // ACCESS LOGS - Historical Access Records
+    // =====================================================================
+    match /accessLogs/{logId} {
+      // Read: Admin only
+      allow read: if isAdmin();
+
+      // Create: Authenticated users (system logging)
+      allow create: if isAuthenticated();
+
+      // Update: Admin only
+      allow update: if isAdmin();
+
+      // Delete: Admin only
+      allow delete: if isAdmin();
+    }
+
+    // =====================================================================
+    // SYSTEM LOGS - Application Logs
+    // =====================================================================
     match /systemLogs/{logId} {
-      // Read: All authenticated users can read system logs
-      allow read: if isAuthenticated();
-      
-      // Create: All authenticated users can create logs (system operations through API)
+      // Read: Admin only
+      allow read: if isAdmin();
+
+      // Create: Authenticated users (application logging)
       allow create: if isAuthenticated();
-      
-      // Update: All authenticated users can update logs (admin operations through API)
-      allow update: if isAuthenticated();
-      
-      // Delete: All authenticated users can delete logs (admin operations through API)
-      allow delete: if isAuthenticated();
+
+      // Update: Admin only
+      allow update: if isAdmin();
+
+      // Delete: Admin only
+      allow delete: if isAdmin();
     }
-    
-    // Allow access to any other collections for authenticated users
-    // This ensures the app works while role-based security is handled in API layer
-    match /{document=**} {
-      allow read, write: if isAuthenticated();
+
+    // =====================================================================
+    // SCHEDULE-CHANGES COLLECTION (alternative name used in API)
+    // =====================================================================
+    match /schedule-changes/{changeId} {
+      // Read: All authenticated users
+      allow read: if isAuthenticated();
+
+      // Create: Admin only
+      allow create: if isAdmin();
+
+      // Update: Admin only
+      allow update: if isAdmin();
+
+      // Delete: Admin only
+      allow delete: if isAdmin();
     }
+
+    // =====================================================================
+    // NO FALLBACK RULE - Explicit deny for security
+    // All collections must be explicitly defined above
+    // =====================================================================
   }
 }

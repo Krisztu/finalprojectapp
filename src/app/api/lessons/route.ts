@@ -1,58 +1,50 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/firebase'
-import { collection, addDoc, getDocs, doc, deleteDoc, query, where, and } from 'firebase/firestore'
+import { db } from '@/lib/firebase-admin'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { day, startTime, subject, teacherName, className, room } = body
-    
+
     if (!day || !startTime || !subject || !teacherName || !className) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+      return NextResponse.json({ error: 'Hiányzó kötelező mezők' }, { status: 400 })
     }
-    
-    // Lekérjük az összes felhasználót az adatbázisból
-    const usersSnapshot = await getDocs(collection(db, 'users'))
+
+    const usersSnapshot = await db.collection('users').get()
     const allUsers = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
-    
-    // Megkeressük a tanárt
-    const teacher = allUsers.find(user => (user.fullName || user.name) === teacherName)
+
+    const teacher = allUsers.find((user: any) => (user.fullName || user.name) === teacherName)
     if (!teacher) {
       return NextResponse.json({ error: 'Tanár nem található' }, { status: 400 })
     }
-    
-    // Megkeressük az osztály diákjait
-    const classStudents = allUsers.filter(user => 
+
+    const classStudents = allUsers.filter((user: any) =>
       (user.role === 'student' || user.role === 'dj') && user.class === className
     )
-    
-    // Összes érintett felhasználó (tanár + diákok)
+
     const affectedUsers = [teacher, ...classStudents]
-    
-    // Ellenőrizzük az ütközéseket minden érintett felhasználónál
+
     for (const user of affectedUsers) {
       const userId = user.id || user.email
-      const conflictQuery = query(
-        collection(db, 'lessons'),
-        and(
-          where('userId', '==', userId),
-          where('day', '==', day),
-          where('startTime', '==', startTime)
-        )
-      )
-      
-      const conflictSnapshot = await getDocs(conflictQuery)
+      const conflictSnapshot = await db.collection('lessons')
+        .where('userId', '==', userId)
+        .where('day', '==', day)
+        .where('startTime', '==', startTime)
+        .get()
+
       if (!conflictSnapshot.empty) {
         const conflictLesson = conflictSnapshot.docs[0].data()
-        return NextResponse.json({ 
-          error: `${user.fullName || user.name} már foglalt ezen az időponton: ${conflictLesson.subject} (${conflictLesson.teacherName})` 
+        return NextResponse.json({
+          error: `${user.fullName || user.name} már foglalt ezen az időponton: ${conflictLesson.subject} (${conflictLesson.teacherName})`
         }, { status: 409 })
       }
     }
-    
-    // Ha nincs ütközés, létrehozzuk az órákat minden érintett felhasználónak
-    const lessonPromises = affectedUsers.map(user => 
-      addDoc(collection(db, 'lessons'), {
+
+    const batch = db.batch()
+
+    affectedUsers.forEach(user => {
+      const newLessonRef = db.collection('lessons').doc()
+      batch.set(newLessonRef, {
         day,
         startTime,
         subject,
@@ -62,16 +54,17 @@ export async function POST(request: NextRequest) {
         userId: user.id || user.email,
         createdAt: new Date().toISOString()
       })
-    )
-    
-    await Promise.all(lessonPromises)
-    
-    return NextResponse.json({ 
-      success: true, 
-      message: `Óra rögzítve ${affectedUsers.length} felhasználónak (1 tanár + ${classStudents.length} diák)` 
+    })
+
+    await batch.commit()
+
+    return NextResponse.json({
+      success: true,
+      message: `Óra rögzítve ${affectedUsers.length} felhasználónak (1 tanár + ${classStudents.length} diák)`
     })
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to create lesson' }, { status: 500 })
+    console.error('Error creating lesson:', error)
+    return NextResponse.json({ error: 'Nem sikerült létrehozni az órát' }, { status: 500 })
   }
 }
 
@@ -81,56 +74,51 @@ export async function GET(request: NextRequest) {
     const className = searchParams.get('class')
     const teacherName = searchParams.get('teacher')
     const userId = searchParams.get('userId')
-    
-    let lessonsQuery = collection(db, 'lessons')
-    
+
+    let lessonsQuery: FirebaseFirestore.Query = db.collection('lessons')
+
     if (userId) {
-      // Minden felhasználónak egyedi órarend a userId alapján
-      lessonsQuery = query(collection(db, 'lessons'), where('userId', '==', userId))
-      
-      const lessonsSnapshot = await getDocs(lessonsQuery)
+      lessonsQuery = db.collection('lessons').where('userId', '==', userId)
+
+      const lessonsSnapshot = await lessonsQuery.get()
       let lessons = lessonsSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }))
-      
-      // Ha nincs óra az ID alapján, próbáljuk email alapján is
+
       if (lessons.length === 0) {
-        const usersSnapshot = await getDocs(collection(db, 'users'))
-        const user = usersSnapshot.docs.find(doc => doc.id === userId)
-        if (user && user.data().email) {
-          const emailQuery = query(collection(db, 'lessons'), where('userId', '==', user.data().email))
-          const emailSnapshot = await getDocs(emailQuery)
+        const userDoc = await db.collection('users').doc(userId).get()
+        if (userDoc.exists && userDoc.data()?.email) {
+          const emailQuery = db.collection('lessons').where('userId', '==', userDoc.data()?.email)
+          const emailSnapshot = await emailQuery.get()
           lessons = emailSnapshot.docs.map(doc => ({
             id: doc.id,
             ...doc.data()
           }))
-          
-
         }
       }
 
       return NextResponse.json(lessons)
     } else if (className) {
-      // Osztály alapján - egy diák órarendjét veszük az osztályból
-      const usersSnapshot = await getDocs(query(collection(db, 'users'), where('class', '==', className)))
+      const usersSnapshot = await db.collection('users').where('class', '==', className).get()
       if (!usersSnapshot.empty) {
         const firstStudentId = usersSnapshot.docs[0].id
-        lessonsQuery = query(collection(db, 'lessons'), where('userId', '==', firstStudentId))
+        lessonsQuery = db.collection('lessons').where('userId', '==', firstStudentId)
       }
     } else if (teacherName) {
-      lessonsQuery = query(collection(db, 'lessons'), where('teacherName', '==', teacherName))
+      lessonsQuery = db.collection('lessons').where('teacherName', '==', teacherName)
     }
-    
-    const lessonsSnapshot = await getDocs(lessonsQuery)
+
+    const lessonsSnapshot = await lessonsQuery.get()
     const lessons = lessonsSnapshot.docs.map(doc => ({
       id: doc.id,
       ...doc.data()
     }))
-    
+
     return NextResponse.json(lessons)
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to fetch lessons' }, { status: 500 })
+    console.error('Error fetching lessons:', error)
+    return NextResponse.json({ error: 'Nem sikerült lekérni az órákat' }, { status: 500 })
   }
 }
 
@@ -138,15 +126,15 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
-    
+
     if (!id) {
-      return NextResponse.json({ error: 'Lesson ID required' }, { status: 400 })
+      return NextResponse.json({ error: 'Óra azonosító szükséges' }, { status: 400 })
     }
-    
-    await deleteDoc(doc(db, 'lessons', id))
-    
+
+    await db.collection('lessons').doc(id).delete()
+
     return NextResponse.json({ success: true })
   } catch (error) {
-    return NextResponse.json({ error: 'Failed to delete lesson' }, { status: 500 })
+    return NextResponse.json({ error: 'Nem sikerült törölni az órát' }, { status: 500 })
   }
 }
