@@ -5,7 +5,7 @@ export async function POST(request: NextRequest) {
   try {
     const usersSnapshot = await db.collection('users').get()
     const students = usersSnapshot.docs
-      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .map(doc => ({ id: doc.id, ...doc.data() as any }))
       .filter((user: any) => (user.role === 'student' || user.role === 'dj') && user.class)
 
     let updatedCount = 0

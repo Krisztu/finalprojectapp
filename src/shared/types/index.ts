@@ -34,6 +34,8 @@ export interface Homework {
     className: string
     attachments?: string[]
     createdAt?: string
+    submissions?: HomeworkSubmission[]
+    submissionCount?: number
 }
 
 export interface HomeworkSubmission {
@@ -46,6 +48,8 @@ export interface HomeworkSubmission {
     submittedAt: string
     grade?: string
     feedback?: string
+    status?: 'completed' | 'incomplete'
+    image?: string
 }
 
 export interface Attendance {

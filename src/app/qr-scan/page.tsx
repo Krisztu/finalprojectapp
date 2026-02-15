@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
 import { CheckCircle, XCircle, Clock } from 'lucide-react'
 
 export default function QRScanPage() {
@@ -35,7 +35,7 @@ export default function QRScanPage() {
       const result = await response.json()
 
       if (result.success) {
-        setStudentName(result.studentName || 'Diák')
+        setStudentName(result.studentName)
         
         if (result.action === 'entry') {
           setStatus('success')

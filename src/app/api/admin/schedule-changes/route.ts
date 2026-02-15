@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     const teacherId = searchParams.get('teacherId')
     const date = searchParams.get('date')
 
-    let changesQuery = db.collection('schedule-changes')
+    let changesQuery: FirebaseFirestore.Query = db.collection('schedule-changes')
 
     if (teacherId && date) {
       changesQuery = changesQuery

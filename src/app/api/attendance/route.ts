@@ -67,7 +67,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(absences)
     }
 
-    let attendanceQuery = db.collection('attendance')
+    let attendanceQuery: FirebaseFirestore.Query = db.collection('attendance')
 
     if (teacherId) {
       attendanceQuery = attendanceQuery.where('teacherId', '==', teacherId)

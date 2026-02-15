@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { X, CheckCircle, AlertTriangle, Info } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@/shared/components/ui/button'
 
 interface CustomAlertProps {
     open: boolean

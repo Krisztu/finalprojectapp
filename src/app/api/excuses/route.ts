@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
     const classTeacher = searchParams.get('classTeacher')
     const studentId = searchParams.get('studentId')
 
-    let excusesQuery = db.collection('excuses')
+    let excusesQuery: FirebaseFirestore.Query = db.collection('excuses')
 
     if (classTeacher) {
       excusesQuery = excusesQuery.where('studentClass', '==', classTeacher)

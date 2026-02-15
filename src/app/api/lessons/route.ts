@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
     }
 
     const usersSnapshot = await db.collection('users').get()
-    const allUsers = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }))
+    const allUsers = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }))
 
     const teacher = allUsers.find((user: any) => (user.fullName || user.name) === teacherName)
     if (!teacher) {
@@ -75,26 +75,36 @@ export async function GET(request: NextRequest) {
     const teacherName = searchParams.get('teacher')
     const userId = searchParams.get('userId')
 
+    console.log('Lessons API - userId:', userId)
+
     let lessonsQuery: FirebaseFirestore.Query = db.collection('lessons')
 
     if (userId) {
+      // Próbáljuk meg userId-val
       lessonsQuery = db.collection('lessons').where('userId', '==', userId)
-
       const lessonsSnapshot = await lessonsQuery.get()
       let lessons = lessonsSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }))
 
+      console.log('Talált órák userId-val:', lessons.length)
+
+      // Ha nincs találat, próbáljuk email-lel
       if (lessons.length === 0) {
-        const userDoc = await db.collection('users').doc(userId).get()
-        if (userDoc.exists && userDoc.data()?.email) {
-          const emailQuery = db.collection('lessons').where('userId', '==', userDoc.data()?.email)
-          const emailSnapshot = await emailQuery.get()
-          lessons = emailSnapshot.docs.map(doc => ({
-            id: doc.id,
-            ...doc.data()
-          }))
+        const userSnapshot = await db.collection('users').where('id', '==', userId).limit(1).get()
+        if (!userSnapshot.empty) {
+          const userData = userSnapshot.docs[0].data() as any
+          if (userData?.email) {
+            console.log('Próbálkozás email-lel:', userData.email)
+            const emailQuery = db.collection('lessons').where('userId', '==', userData.email)
+            const emailSnapshot = await emailQuery.get()
+            lessons = emailSnapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            }))
+            console.log('Talált órák email-lel:', lessons.length)
+          }
         }
       }
 

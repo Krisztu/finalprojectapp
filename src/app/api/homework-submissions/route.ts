@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
     const homeworkId = searchParams.get('homeworkId')
     const studentId = searchParams.get('studentId')
 
-    let submissionsQuery = db.collection('homework-submissions')
+    let submissionsQuery: FirebaseFirestore.Query = db.collection('homework-submissions')
 
     if (homeworkId) {
       submissionsQuery = submissionsQuery.where('homeworkId', '==', homeworkId)

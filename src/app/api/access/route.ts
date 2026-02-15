@@ -9,6 +9,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Hiányzó adatok' }, { status: 400 })
     }
 
+    // Felhasználó nevének lekérése
+    const usersSnapshot = await db.collection('users').where('id', '==', studentId).limit(1).get()
+    let studentName = 'Diák'
+    if (!usersSnapshot.empty) {
+      const userData = usersSnapshot.docs[0].data()
+      studentName = userData.fullName || userData.name || 'Diák'
+    }
+
     const now = new Date()
     const today = now.toISOString().split('T')[0]
 
@@ -33,7 +41,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         action: 'entry',
-        studentName: 'Demo Diák'
+        studentName
       })
     } else {
       if (!accessData?.entryTime) {
@@ -62,14 +70,14 @@ export async function POST(request: NextRequest) {
           success: true,
           action: 'exit',
           canExit: true,
-          studentName: 'Demo Diák'
+          studentName
         })
       } else {
         return NextResponse.json({
           success: true,
           action: 'exit',
           canExit: false,
-          studentName: 'Demo Diák'
+          studentName
         })
       }
     }
