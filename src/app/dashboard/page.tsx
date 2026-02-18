@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -16,6 +16,7 @@ import QRCode from 'qrcode'
 import { LogOut, User as UserIcon, BookOpen, Calendar, Music, MessageCircle, QrCode, Camera, Upload } from 'lucide-react'
 import { CustomAlert } from '@/shared/components/ui/custom-alert'
 import { ChartModal } from '@/features/grades/components/ChartModal'
+import { ClassGradeModal } from '@/features/grades/components/ClassGradeModal'
 import { HomeworkModal } from '@/features/homework/components/HomeworkModal'
 import { SubmissionModal } from '@/features/homework/components/SubmissionModal'
 import { AttendanceModal } from '@/features/attendance/components/AttendanceModal'
@@ -54,6 +55,7 @@ export default function Dashboard() {
   const [darkMode, setDarkMode] = useState(false)
   const [cookieConsent, setCookieConsent] = useState(false)
   const [showChartModal, setShowChartModal] = useState(false)
+  const [showClassGradeModal, setShowClassGradeModal] = useState(false)
   const [selectedSubject, setSelectedSubject] = useState<string | null>(null)
   const [userRole, setUserRole] = useState('student')
   const [selectedClass, setSelectedClass] = useState('')
@@ -874,6 +876,31 @@ export default function Dashboard() {
     } catch (error) {
       console.error('Profile upload error:', error)
       showAlert('Hiba a profilkép feltöltése során', 'error')
+    }
+  }
+
+  const handleClassGradeSave = async (grades: { studentName: string; grade: string }[], title: string, description: string) => {
+    try {
+      for (const gradeData of grades) {
+        await fetch('/api/grades', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            studentName: gradeData.studentName,
+            studentClass: selectedClass,
+            subject: currentUser?.subject || 'Egyéb',
+            grade: gradeData.grade,
+            title: title,
+            description: description,
+            teacherName: currentUser?.fullName || currentUser?.name
+          })
+        })
+      }
+      showAlert(`${grades.length} jegy sikeresen rögzítve!`, 'success')
+      setShowClassGradeModal(false)
+      loadGrades(currentUser)
+    } catch (error) {
+      showAlert('Hiba történt a jegyek rögzítése során', 'error')
     }
   }
 
@@ -3853,6 +3880,16 @@ export default function Dashboard() {
 
           return dates
         })()}
+      />
+
+      <ClassGradeModal
+        isOpen={showClassGradeModal}
+        onClose={() => setShowClassGradeModal(false)}
+        className={selectedClass}
+        students={allUsers.filter(u => (u.role === 'student' || u.role === 'dj') && u.class === selectedClass)}
+        subject={currentUser?.subject || 'Egyéb'}
+        teacherName={currentUser?.fullName || currentUser?.name || ''}
+        onSave={handleClassGradeSave}
       />
     </div >
   )
