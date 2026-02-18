@@ -8,8 +8,8 @@ import { CheckCircle, XCircle, Clock } from 'lucide-react'
 export default function QRScanPage() {
   const searchParams = useSearchParams()
   const [status, setStatus] = useState<'loading' | 'success' | 'error' | 'early'>('loading')
-  const [message, setMessage] = useState('')
-  const [studentName, setStudentName] = useState('')
+  const [message, setMessage] = useState<string>('')
+  const [studentName, setStudentName] = useState<string>('')
 
   useEffect(() => {
     const studentId = searchParams.get('student')

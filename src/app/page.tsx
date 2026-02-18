@@ -10,13 +10,13 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useRouter } from 'next/navigation'
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [fullName, setFullName] = useState('')
-  const [studentId, setStudentId] = useState('')
-  const [isLogin, setIsLogin] = useState(true)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
+  const [email, setEmail] = useState<string>('')
+  const [password, setPassword] = useState<string>('')
+  const [fullName, setFullName] = useState<string>('')
+  const [studentId, setStudentId] = useState<string>('')
+  const [isLogin, setIsLogin] = useState<boolean>(true)
+  const [loading, setLoading] = useState<boolean>(false)
+  const [error, setError] = useState<string>('')
   const { signIn, signUp, user, error: authError } = useAuth()
   const router = useRouter()
 
