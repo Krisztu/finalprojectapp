@@ -12,12 +12,9 @@ import { useRouter } from 'next/navigation'
 export default function LoginPage() {
   const [email, setEmail] = useState<string>('')
   const [password, setPassword] = useState<string>('')
-  const [fullName, setFullName] = useState<string>('')
-  const [studentId, setStudentId] = useState<string>('')
-  const [isLogin, setIsLogin] = useState<boolean>(true)
   const [loading, setLoading] = useState<boolean>(false)
   const [error, setError] = useState<string>('')
-  const { signIn, signUp, user, error: authError } = useAuth()
+  const { signIn, user, error: authError } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
@@ -34,52 +31,13 @@ export default function LoginPage() {
       return
     }
 
-    if (!isLogin && (!fullName || !studentId)) {
-      setError('Teljes név és oktatási azonosító szükséges')
-      return
-    }
-
     setLoading(true)
     setError('')
 
     try {
-      if (isLogin) {
-        await signIn(email, password)
-      } else {
-        const userCredential = await signUp(email, password)
-        if (userCredential.user) {
-          try {
-            const availableClasses = ['12.A', '12.B']
-            const assignedClass = availableClasses[Math.floor(Math.random() * availableClasses.length)]
-
-            const userData = {
-              uid: userCredential.user.uid,
-              email: email,
-              fullName: fullName,
-              studentId: studentId,
-              role: 'student',
-              class: assignedClass
-            }
-
-            const response = await fetch('/api/users', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(userData)
-            })
-
-            if (response.ok) {
-              const result = await response.json()
-              alert(`Regisztráció sikeres!\nOsztály: ${assignedClass}\n${result.lessonsAdded || ''}`)
-            } else {
-              alert('Felhasználó létrehozása sikertelen')
-            }
-          } catch (apiError) {
-            alert('Felhasználó mentése sikertelen, de a fiók létrejött')
-          }
-        }
-      }
+      await signIn(email, password)
     } catch (error: any) {
-      setError(isLogin ? 'Hibás email vagy jelszó' : 'Regisztráció sikertelen')
+      setError('Hibás email vagy jelszó')
     } finally {
       setLoading(false)
     }
@@ -103,29 +61,6 @@ export default function LoginPage() {
         </div>
 
         <GlassCard variant="panel" className="border-t-white/40">
-          <div className="flex w-full bg-black/5 dark:bg-black/20 rounded-xl p-1 mb-8 backdrop-blur-sm">
-            <button
-              type="button"
-              className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all duration-300 ${isLogin
-                  ? 'bg-white dark:bg-white/10 shadow-md text-primary dark:text-white scale-100'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
-                }`}
-              onClick={() => setIsLogin(true)}
-            >
-              Bejelentkezés
-            </button>
-            <button
-              type="button"
-              className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all duration-300 ${!isLogin
-                  ? 'bg-white dark:bg-white/10 shadow-md text-primary dark:text-white scale-100'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-white/5'
-                }`}
-              onClick={() => setIsLogin(false)}
-            >
-              Regisztráció
-            </button>
-          </div>
-
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-2">
               <Label htmlFor="email" className="text-foreground/80 font-medium ml-1">Email cím</Label>
@@ -145,7 +80,7 @@ export default function LoginPage() {
               <Input
                 id="password"
                 type="password"
-                placeholder={isLogin ? "••••••••" : "Minimum 6 karakter"}
+                placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={loading}
@@ -154,36 +89,6 @@ export default function LoginPage() {
                 className="glass-input h-11"
               />
             </div>
-            {!isLogin && (
-              <>
-                <div className="space-y-2 animate-fade-in-up">
-                  <Label htmlFor="fullName" className="text-foreground/80 font-medium ml-1">Teljes név</Label>
-                  <Input
-                    id="fullName"
-                    type="text"
-                    placeholder="Kovács Péter"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    disabled={loading}
-                    required={!isLogin}
-                    className="glass-input h-11"
-                  />
-                </div>
-                <div className="space-y-2 animate-fade-in-up" style={{ animationDelay: '0.1s' }}>
-                  <Label htmlFor="studentId" className="text-foreground/80 font-medium ml-1">Oktatási azonosító</Label>
-                  <Input
-                    id="studentId"
-                    type="text"
-                    placeholder="7xxxxxxxxxx"
-                    value={studentId}
-                    onChange={(e) => setStudentId(e.target.value)}
-                    disabled={loading}
-                    required={!isLogin}
-                    className="glass-input h-11"
-                  />
-                </div>
-              </>
-            )}
 
             {(error || authError) && (
               <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-sm text-center font-medium animate-shake">
@@ -200,7 +105,7 @@ export default function LoginPage() {
                 <Sparkles className="mr-2 h-5 w-5 animate-spin" />
               ) : (
                 <span className="flex items-center">
-                  {isLogin ? 'Bejelentkezés' : 'Fiók létrehozása'}
+                  Bejelentkezés
                   <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
                 </span>
               )}
