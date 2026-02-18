@@ -90,7 +90,7 @@ export interface ChatMessage {
     text: string
     userId: string
     userName: string
-    timestamp: any
+    timestamp: string | Date
 }
 
 export interface MusicRequest {
@@ -101,5 +101,5 @@ export interface MusicRequest {
     userName: string
     userClass: string
     status: 'pending' | 'played' | 'rejected'
-    createdAt: any
+    createdAt: string | Date
 }

@@ -5,11 +5,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui
 import { Button } from '@/shared/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/shared/components/ui/select'
 import { Badge } from '@/shared/components/ui/badge'
-import { Calendar, Clock, User, Users, Plus, Edit, X } from 'lucide-react'
+import { Calendar, Clock, User as UserIcon, Users, Plus, Edit, X } from 'lucide-react'
+import { User } from '@/shared/types'
 
 interface ScheduleManagerProps {
-  allUsers: any[]
-  availableClasses: any[]
+  allUsers: User[]
+  availableClasses: { name: string }[]
 }
 
 export default function ScheduleManager({ allUsers, availableClasses }: ScheduleManagerProps) {
@@ -164,7 +165,7 @@ export default function ScheduleManager({ allUsers, availableClasses }: Schedule
                 <SelectContent>
                   <SelectItem value="user">
                     <div className="flex items-center gap-2">
-                      <User className="h-4 w-4" />
+                      <UserIcon className="h-4 w-4" />
                       Egyéni órarend
                     </div>
                   </SelectItem>

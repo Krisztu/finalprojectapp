@@ -2,10 +2,15 @@ import React, { useState } from 'react';
 import { Modal } from '@/shared/components/ui/modal';
 import { BarChart2 } from 'lucide-react';
 
+interface Grade {
+    subject?: string;
+    grade?: number;
+}
+
 interface ChartModalProps {
     isOpen: boolean;
     onClose: () => void;
-    grades: any[];
+    grades: Grade[];
 }
 
 export function ChartModal({ isOpen, onClose, grades }: ChartModalProps) {
@@ -70,8 +75,8 @@ export function ChartModal({ isOpen, onClose, grades }: ChartModalProps) {
             <div className="glass-panel border border-white/10 rounded-xl p-6 bg-white/5">
                 <div className="w-full overflow-x-auto">
                     <svg viewBox="0 0 700 450" className="w-full h-96 min-w-[600px]">
-                        {chartData.map(([subject, subjectGrades]: [string, any], index: number, filteredArray: any[]) => {
-                            const average = subjectGrades.reduce((sum: number, grade: any) => sum + (grade.grade || 0), 0) / subjectGrades.length;
+                        {chartData.map(([subject, subjectGrades]: [string, Grade[]], index: number, filteredArray: [string, Grade[]][]) => {
+                            const average = subjectGrades.reduce((sum: number, grade: Grade) => sum + (grade.grade || 0), 0) / subjectGrades.length;
                             const barHeight = (average / 5) * 250;
                             const chartWidth = 550;
                             const barWidth = Math.min(70, (chartWidth / filteredArray.length) - 30);
