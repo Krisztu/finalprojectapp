@@ -123,13 +123,13 @@ export function ClassGradeModal({ isOpen, onClose, className, students, subject,
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-96 overflow-y-auto pr-2">
+                    <div className="space-y-2 max-h-96 overflow-y-auto pr-2">
                         {studentGrades.map((student, index) => (
                             <div key={student.id} className="flex items-center justify-between p-3 border rounded-lg bg-white/5 border-white/10">
-                                <span className="font-medium text-sm truncate mr-2">
+                                <span className="font-medium text-sm flex-1">
                                     {student.name}
                                 </span>
-                                <div className="flex gap-1">
+                                <div className="flex gap-1 flex-shrink-0">
                                     {[1, 2, 3, 4, 5].map(grade => (
                                         <button
                                             key={grade}
@@ -145,15 +145,17 @@ export function ClassGradeModal({ isOpen, onClose, className, students, subject,
                                             {grade}
                                         </button>
                                     ))}
-                                    {student.grade && (
-                                        <button
-                                            onClick={() => handleGradeChange(index, '')}
-                                            className="w-8 h-8 rounded bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-red-400 hover:text-white transition-all"
-                                            title="Törlés"
-                                        >
-                                            ×
-                                        </button>
-                                    )}
+                                    <button
+                                        onClick={() => handleGradeChange(index, '')}
+                                        className={`w-8 h-8 rounded transition-all ${
+                                            !student.grade
+                                                ? 'bg-gray-400 dark:bg-gray-500 text-white scale-110'
+                                                : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-300 dark:hover:bg-gray-600'
+                                        }`}
+                                        title="Nem írt"
+                                    >
+                                        ×
+                                    </button>
                                 </div>
                             </div>
                         ))}
