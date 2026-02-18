@@ -145,6 +145,15 @@ export function ClassGradeModal({ isOpen, onClose, className, students, subject,
                                             {grade}
                                         </button>
                                     ))}
+                                    {student.grade && (
+                                        <button
+                                            onClick={() => handleGradeChange(index, '')}
+                                            className="w-8 h-8 rounded bg-gray-300 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-red-400 hover:text-white transition-all"
+                                            title="Törlés"
+                                        >
+                                            ×
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         ))}
