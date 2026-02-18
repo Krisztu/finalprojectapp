@@ -1704,6 +1704,19 @@ export default function Dashboard() {
                     >
                       Jegy rögzítése
                     </Button>
+                    <Button
+                      onClick={() => {
+                        if (!selectedClass) {
+                          alert('Először válassz osztályt!')
+                          return
+                        }
+                        setShowClassGradeModal(true)
+                      }}
+                      className="w-full bg-green-600 hover:bg-green-700 mt-2"
+                      size="sm"
+                    >
+                      📝 Osztály jegyírás
+                    </Button>
                   </CardContent>
                 </Card>
               </div>
