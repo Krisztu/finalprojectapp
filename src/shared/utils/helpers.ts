@@ -1,4 +1,3 @@
-// Dátum formázás
 export function formatDate(date: string | Date, locale: string = 'hu-HU'): string {
     return new Date(date).toLocaleDateString(locale);
 }
@@ -16,7 +15,6 @@ export function formatDateLong(date: string | Date): string {
     });
 }
 
-// Jegy színek
 export function getGradeColor(grade: number): string {
     if (grade >= 4) return 'bg-green-500';
     if (grade >= 3) return 'bg-yellow-500';
@@ -29,14 +27,12 @@ export function getGradeTextColor(grade: number): string {
     return 'text-red-600';
 }
 
-// Átlag számítás
 export function calculateAverage(grades: Array<{ grade: number }>): number {
     if (grades.length === 0) return 0;
     const sum = grades.reduce((acc, g) => acc + g.grade, 0);
     return sum / grades.length;
 }
 
-// YouTube video ID kinyerése
 export function getYouTubeVideoId(url: string): string {
     if (url.includes('music.youtube.com')) {
         return url.split('v=')[1]?.split('&')[0] || url.split('/').pop() || '';
@@ -44,7 +40,6 @@ export function getYouTubeVideoId(url: string): string {
     return url.split('v=')[1]?.split('&')[0] || url.split('/').pop() || '';
 }
 
-// Platform detektálás
 export function detectMusicPlatform(url: string): 'spotify' | 'youtube' | null {
     if (url.includes('spotify.com')) return 'spotify';
     if (url.includes('youtube.com') || url.includes('youtu.be') || url.includes('music.youtube.com')) {
@@ -53,7 +48,6 @@ export function detectMusicPlatform(url: string): 'spotify' | 'youtube' | null {
     return null;
 }
 
-// Lyukas órák kitöltése
 export function fillEmptyPeriods(dayLessons: any[], timeSlots: readonly string[]): any[] {
     if (dayLessons.length === 0) return [];
 

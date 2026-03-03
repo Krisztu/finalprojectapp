@@ -13,7 +13,7 @@ import { Input } from '@/shared/components/ui/input'
 import { Textarea } from '@/shared/components/ui/textarea'
 import { uploadToCloudinary } from '@/lib/cloudinary'
 import QRCode from 'qrcode'
-import { LogOut, User as UserIcon, BookOpen, Calendar, Music, MessageCircle, QrCode, Camera, Upload } from 'lucide-react'
+import { LogOut, User as UserIcon, BookOpen, Calendar, Music, MessageCircle, QrCode, Camera, Upload, Sun, Moon, Home, CalendarDays, BarChart3, ClipboardList, FileText, CheckCircle, Radio, MessageSquare, Smartphone, Users, LogIn } from 'lucide-react'
 import { CustomAlert } from '@/shared/components/ui/custom-alert'
 import { ChartModal } from '@/features/grades/components/ChartModal'
 import { ClassGradeModal } from '@/features/grades/components/ClassGradeModal'
@@ -65,8 +65,9 @@ export default function Dashboard() {
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [currentWeek, setCurrentWeek] = useState(0)
   const [lessonForm, setLessonForm] = useState({ day: '', startTime: '', subject: '', teacher: '', class: '', room: '' })
-  const [teacherForm, setTeacherForm] = useState({ email: '', password: '', fullName: '', subject: '', classes: [] as string[] })
-  const [studentForm, setStudentForm] = useState({ email: '', password: '', fullName: '', studentId: '', class: '' })
+  const [teacherForm, setTeacherForm] = useState({ email: '', password: '', fullName: '', subject: '', classes: [] as string[], isHomeroom: false, homeroomClass: '' })
+  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([])
+  const [studentForm, setStudentForm] = useState({ email: '', password: '', fullName: '', studentId: '', class: '', isDJ: false })
   const [scheduleChangeForm, setScheduleChangeForm] = useState({
     teacherId: '',
     date: '',
@@ -96,14 +97,18 @@ export default function Dashboard() {
   const [selectedAbsences, setSelectedAbsences] = useState<any[]>([])
   const [teacherSearch, setTeacherSearch] = useState('')
   const [studentSearch, setStudentSearch] = useState('')
+  const [userSearch, setUserSearch] = useState('')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
-  const [alertData, setAlertData] = useState<{ isOpen: boolean, title: string, message: string, type: 'success' | 'error' | 'warning' | 'info' | 'default' }>({ isOpen: false, title: '', message: '', type: 'default' })
+  const [alertData, setAlertData] = useState<{ isOpen: boolean, title: string, message: string, type: 'success' | 'error' | 'warning' | 'info' }>({ isOpen: false, title: '', message: '', type: 'info' })
   const [justifications, setJustifications] = useState<any[]>([])
   const [justificationForm, setJustificationForm] = useState({ date: '', reason: '', proofUrl: '' })
   const [selectedJustification, setSelectedJustification] = useState<any>(null)
   const [showJustificationModal, setShowJustificationModal] = useState(false)
+  const [dataCache, setDataCache] = useState<{ timestamp: number, data: any }>({ timestamp: 0, data: {} })
+  const [loadTimers, setLoadTimers] = useState<{ [key: string]: NodeJS.Timeout }>({})
+  const [qrType, setQrType] = useState<'entry' | 'exit'>('entry')
 
-  const showAlert = (message: string, type: 'success' | 'error' | 'warning' | 'info' | 'default' = 'default', title: string = 'Értesítés') => {
+  const showAlert = (message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info', title: string = 'Értesítés') => {
     setAlertData({ isOpen: true, title, message, type })
   }
 
@@ -120,7 +125,6 @@ export default function Dashboard() {
       return
     }
 
-
     const consent = localStorage.getItem('cookieConsent')
     if (consent === 'true') {
       setCookieConsent(true)
@@ -132,23 +136,50 @@ export default function Dashboard() {
       }
     }
 
-    loadUserData()
-    loadMusicRequests()
-    loadChatMessages()
-    generateUserQR()
-    setupUserRoles()
+    let isMounted = true
+    const initData = async () => {
+      if (!isMounted) return
+      await Promise.all([
+        loadUserData(),
+        loadMusicRequests(),
+        loadChatMessages(),
+        generateUserQR(),
+        setupUserRoles()
+      ])
+    }
+    initData()
+
+    const chatInterval = setInterval(() => {
+      if (isMounted) loadChatMessages()
+    }, 30000)
+
+    return () => {
+      isMounted = false
+      clearInterval(chatInterval)
+    }
   }, [user])
 
 
   useEffect(() => {
     if (currentUser) {
-      loadLessons(currentUser)
-      loadHomework()
-      loadAttendance()
-      if (currentUser.role === 'homeroom_teacher' || currentUser.role === 'student' || currentUser.role === 'dj') {
-        loadExcuses()
-        loadJustifications()
-      }
+      if (loadTimers.dataLoad) clearTimeout(loadTimers.dataLoad)
+      const timer = setTimeout(() => {
+        const loadData = async () => {
+          await Promise.all([
+            loadLessons(currentUser),
+            loadHomework(),
+            loadAttendance()
+          ])
+          if (currentUser.role === 'homeroom_teacher' || currentUser.role === 'student' || currentUser.role === 'dj') {
+            await Promise.all([
+              loadExcuses(),
+              loadJustifications()
+            ])
+          }
+        }
+        loadData()
+      }, 300)
+      setLoadTimers(prev => ({ ...prev, dataLoad: timer }))
     }
   }, [selectedDate, currentUser])
 
@@ -221,11 +252,18 @@ export default function Dashboard() {
   }
 
   const loadMusicRequests = async () => {
+    const cacheKey = 'musicRequests'
+    const now = Date.now()
+    if (dataCache.data[cacheKey] && now - dataCache.timestamp < 60000) {
+      setMusicRequests(dataCache.data[cacheKey])
+      return
+    }
     try {
       const response = await fetch('/api/music')
       if (response.ok) {
         const data = await response.json()
         setMusicRequests(data)
+        setDataCache(prev => ({ timestamp: now, data: { ...prev.data, [cacheKey]: data } }))
         console.log('Zene kérések betöltve')
       }
     } catch (error) {
@@ -234,11 +272,18 @@ export default function Dashboard() {
   }
 
   const loadChatMessages = async () => {
+    const cacheKey = 'chatMessages'
+    const now = Date.now()
+    if (dataCache.data[cacheKey] && now - dataCache.timestamp < 60000) {
+      setChatMessages(dataCache.data[cacheKey])
+      return
+    }
     try {
       const response = await fetch('/api/chat')
       if (response.ok) {
         const data = await response.json()
         setChatMessages(data)
+        setDataCache(prev => ({ timestamp: now, data: { ...prev.data, [cacheKey]: data } }))
         console.log('Üzenetek betöltve')
       }
     } catch (error) {
@@ -246,14 +291,15 @@ export default function Dashboard() {
     }
   }
 
-  const generateUserQR = async () => {
+  const generateUserQR = async (action?: 'entry' | 'exit') => {
     if (!user) return
     try {
-      const action = Math.random() > 0.5 ? 'entry' : 'exit'
-      const qrData = `${window.location.origin}/qr-scan?student=${user.uid}&action=${action}`
+      const qrAction = action || qrType
+      const qrData = `${window.location.origin}/qr-scan?student=${user.uid}&action=${qrAction}`
       const qrCodeUrl = await QRCode.toDataURL(qrData)
       setQrCode(qrCodeUrl)
-      console.log('QR kód generálva')
+      setQrType(qrAction)
+      console.log('QR kód generálva:', qrAction)
     } catch (error) {
       console.log('QR kód generálás sikertelen', error)
     }
@@ -273,9 +319,23 @@ export default function Dashboard() {
 
     const platform = detectMusicPlatform(musicUrl)
     if (!platform) {
-      alert('Nem támogatott platform!')
+      showAlert('Nem támogatott platform!', 'error')
       return
     }
+
+    const tempRequest = {
+      id: 'temp-' + Date.now(),
+      url: musicUrl,
+      platform,
+      userId: user.uid,
+      userName: student?.Name || user.email,
+      userClass: student?.Class || 'N/A',
+      title: 'Betöltés...',
+      createdAt: new Date().toISOString()
+    }
+
+    setMusicRequests(prev => [tempRequest, ...prev])
+    setMusicUrl('')
 
     try {
       const response = await fetch('/api/music', {
@@ -290,35 +350,49 @@ export default function Dashboard() {
         })
       })
 
-      if (response.ok) {
-        setMusicUrl('')
-        loadMusicRequests()
+      if (!response.ok) {
+        setMusicRequests(prev => prev.filter(m => m.id !== tempRequest.id))
+        showAlert('Zene kérés küldése sikertelen', 'error')
       }
     } catch (error) {
-      console.log('Zene kérés küldése sikertelen')
+      setMusicRequests(prev => prev.filter(m => m.id !== tempRequest.id))
+      showAlert('Zene kérés küldése sikertelen', 'error')
     }
   }
 
   const sendChatMessage = async () => {
     if (!chatMessage.trim() || !user) return
 
+    const messageText = chatMessage
+    const tempMessage = {
+      id: 'temp-' + Date.now(),
+      message: messageText,
+      userId: user.uid,
+      userName: currentUser?.fullName || currentUser?.name || user.email,
+      createdAt: new Date().toISOString()
+    }
+    
+    setChatMessages(prev => [...prev, tempMessage])
+    setChatMessage('')
+
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: chatMessage,
+          message: messageText,
           userId: user.uid,
           userName: currentUser?.fullName || currentUser?.name || user.email
         })
       })
 
-      if (response.ok) {
-        setChatMessage('')
-        loadChatMessages()
+      if (!response.ok) {
+        setChatMessages(prev => prev.filter(m => m.id !== tempMessage.id))
+        showAlert('Üzenet küldése sikertelen', 'error')
       }
     } catch (error) {
-      console.log('Üzenet küldése sikertelen')
+      setChatMessages(prev => prev.filter(m => m.id !== tempMessage.id))
+      showAlert('Üzenet küldése sikertelen', 'error')
     }
   }
 
@@ -468,6 +542,12 @@ export default function Dashboard() {
   }
 
   const loadAllUsers = async (currentRole?: string) => {
+    const cacheKey = `allUsers_${currentRole || userRole}`
+    const now = Date.now()
+    if (dataCache.data[cacheKey] && now - dataCache.timestamp < 60000) {
+      setAllUsers(dataCache.data[cacheKey])
+      return
+    }
     try {
       const roleToCheck = currentRole || userRole
       if (roleToCheck === 'student' || roleToCheck === 'dj') {
@@ -480,13 +560,11 @@ export default function Dashboard() {
         url += '?role=student'
       }
 
-
-
       const response = await fetch(url)
       if (response.ok) {
         const users = await response.json()
         setAllUsers(users)
-
+        setDataCache(prev => ({ timestamp: now, data: { ...prev.data, [cacheKey]: users } }))
 
         const classes = Array.from(new Set(users.filter((u: any) => u.class).map((u: any) => u.class)))
         if (classes.length > 0) {
@@ -538,10 +616,10 @@ export default function Dashboard() {
     try {
       let url = '/api/attendance'
 
-      if (currentUser.role === 'teacher') {
-        url += `?teacherId=${encodeURIComponent(currentUser.id || user?.uid)}`
+      if (currentUser.role === 'teacher' || currentUser.role === 'homeroom_teacher') {
+        url += `?teacherId=${encodeURIComponent(currentUser.id || user?.uid || '')}`
       } else if (currentUser.role === 'student' || currentUser.role === 'dj') {
-        url += `?studentId=${encodeURIComponent(currentUser.id || user?.uid)}`
+        url += `?studentId=${encodeURIComponent(currentUser.id || user?.uid || '')}`
       }
 
       const response = await fetch(url)
@@ -666,10 +744,12 @@ export default function Dashboard() {
         })
       } else {
         // Create
+        const lessonId = `${selectedLesson.Day}_${selectedLesson.StartTime}_${selectedLesson.Class}`
         response = await fetch('/api/attendance', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
+            lessonId: lessonId,
             teacherId: currentUser?.id || user?.uid,
             date: selectedDate.toISOString().split('T')[0],
             startTime: selectedLesson.StartTime,
@@ -824,7 +904,7 @@ export default function Dashboard() {
     )
 
     if (existingRecord) {
-      alert('Ehhez az órához már rögzítettél mulasztásokat!')
+      showAlert('Ehhez az órához már rögzítettél mulasztásokat!', 'warning')
       return
     }
 
@@ -936,7 +1016,7 @@ export default function Dashboard() {
                 }}
                 className="rounded-full hover:bg-white/10 w-8 h-8 sm:w-10 sm:h-10"
               >
-                <span className="text-lg">{darkMode ? '☀️' : '🌙'}</span>
+                {darkMode ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </Button>
               <div className="hidden md:flex flex-col items-end mr-2">
                 <span className="text-xs sm:text-sm font-semibold text-foreground">
@@ -967,9 +1047,9 @@ export default function Dashboard() {
             {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="grades" className="text-sm whitespace-nowrap px-4">Jegyek</TabsTrigger>}
             {userRole === 'teacher' && <TabsTrigger value="teacher-grades" className="text-sm whitespace-nowrap px-4">Jegyek</TabsTrigger>}
             {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="absences" className="text-sm whitespace-nowrap px-4">Mulasztások</TabsTrigger>}
-            {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="homework" className="text-sm whitespace-nowrap px-4">Házi</TabsTrigger>}
+            {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="homework" className="text-sm whitespace-nowrap px-4">Házifeladat</TabsTrigger>}
             {userRole === 'teacher' && <TabsTrigger value="teacher-absences" className="text-sm whitespace-nowrap px-4">Mulasztások</TabsTrigger>}
-            {userRole === 'teacher' && <TabsTrigger value="teacher-homework" className="text-sm whitespace-nowrap px-4">Házi</TabsTrigger>}
+            {userRole === 'teacher' && <TabsTrigger value="teacher-homework" className="text-sm whitespace-nowrap px-4">Házifeladat</TabsTrigger>}
             {(currentUser?.role === 'homeroom_teacher') && <TabsTrigger value="class-excuses" className="text-sm whitespace-nowrap px-4">Igazolások</TabsTrigger>}
             {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="student-excuses" className="text-sm whitespace-nowrap px-4">Igazolás</TabsTrigger>}
             {userRole !== 'admin' && <TabsTrigger value="radio" className="text-sm whitespace-nowrap px-4">Rádió</TabsTrigger>}
@@ -978,6 +1058,7 @@ export default function Dashboard() {
             {userRole === 'admin' && <TabsTrigger value="admin-schedule" className="text-sm whitespace-nowrap px-4">Órarend</TabsTrigger>}
             {userRole === 'admin' && <TabsTrigger value="admin-grades" className="text-sm whitespace-nowrap px-4">Jegyek</TabsTrigger>}
             {userRole === 'admin' && <TabsTrigger value="admin-users" className="text-sm whitespace-nowrap px-4">Userek</TabsTrigger>}
+            {userRole === 'admin' && <TabsTrigger value="admin-statistics" className="text-sm whitespace-nowrap px-4">Statisztikák</TabsTrigger>}
             <TabsTrigger value="profile" className="text-sm whitespace-nowrap px-4">Profil</TabsTrigger>
           </TabsList>
 
@@ -1003,23 +1084,24 @@ export default function Dashboard() {
           {mobileMenuOpen && (
             <div className="md:hidden mb-4 glass-card overflow-hidden">
               <TabsList className="flex flex-col w-full h-auto bg-transparent gap-0 p-0">
-                <TabsTrigger value="dashboard" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">🏠 Főoldal</TabsTrigger>
-                {userRole !== 'admin' && <TabsTrigger value="schedule" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">📅 Órarend</TabsTrigger>}
-                {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="grades" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">📊 Jegyek</TabsTrigger>}
-                {userRole === 'teacher' && <TabsTrigger value="teacher-grades" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">📊 Jegyek</TabsTrigger>}
-                {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="absences" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">📋 Mulasztások</TabsTrigger>}
-                {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="homework" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">📝 Házi</TabsTrigger>}
-                {userRole === 'teacher' && <TabsTrigger value="teacher-absences" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">📋 Mulasztások</TabsTrigger>}
-                {userRole === 'teacher' && <TabsTrigger value="teacher-homework" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">📝 Házi</TabsTrigger>}
-                {(currentUser?.role === 'homeroom_teacher') && <TabsTrigger value="class-excuses" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">✅ Igazolások</TabsTrigger>}
-                {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="student-excuses" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">✅ Igazolás</TabsTrigger>}
-                {userRole !== 'admin' && <TabsTrigger value="radio" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">🎵 Rádió</TabsTrigger>}
-                <TabsTrigger value="chat" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">💬 Üzenőfal</TabsTrigger>
-                {userRole !== 'teacher' && userRole !== 'admin' && <TabsTrigger value="qr" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">📱 QR</TabsTrigger>}
-                {userRole === 'admin' && <TabsTrigger value="admin-schedule" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">📅 Órarend</TabsTrigger>}
-                {userRole === 'admin' && <TabsTrigger value="admin-grades" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">📊 Jegyek</TabsTrigger>}
-                {userRole === 'admin' && <TabsTrigger value="admin-users" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors">👥 Userek</TabsTrigger>}
-                <TabsTrigger value="profile" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none hover:bg-white/5 transition-colors">👤 Profil</TabsTrigger>
+                <TabsTrigger value="dashboard" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><Home className="h-4 w-4" /> Főoldal</TabsTrigger>
+                {userRole !== 'admin' && <TabsTrigger value="schedule" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><CalendarDays className="h-4 w-4" /> Órarend</TabsTrigger>}
+                {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="grades" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><BarChart3 className="h-4 w-4" /> Jegyek</TabsTrigger>}
+                {userRole === 'teacher' && <TabsTrigger value="teacher-grades" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><BarChart3 className="h-4 w-4" /> Jegyek</TabsTrigger>}
+                {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="absences" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><ClipboardList className="h-4 w-4" /> Mulasztások</TabsTrigger>}
+                {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="homework" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><FileText className="h-4 w-4" /> Házifeladat</TabsTrigger>}
+                {userRole === 'teacher' && <TabsTrigger value="teacher-absences" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><ClipboardList className="h-4 w-4" /> Mulasztások</TabsTrigger>}
+                {userRole === 'teacher' && <TabsTrigger value="teacher-homework" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><FileText className="h-4 w-4" /> Házifeladat</TabsTrigger>}
+                {(currentUser?.role === 'homeroom_teacher') && <TabsTrigger value="class-excuses" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><CheckCircle className="h-4 w-4" /> Igazolások</TabsTrigger>}
+                {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="student-excuses" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><CheckCircle className="h-4 w-4" /> Igazolás</TabsTrigger>}
+                {userRole !== 'admin' && <TabsTrigger value="radio" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><Radio className="h-4 w-4" /> Rádió</TabsTrigger>}
+                <TabsTrigger value="chat" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><MessageSquare className="h-4 w-4" /> Üzenőfal</TabsTrigger>
+                {userRole !== 'teacher' && userRole !== 'admin' && <TabsTrigger value="qr" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><Smartphone className="h-4 w-4" /> QR</TabsTrigger>}
+                {userRole === 'admin' && <TabsTrigger value="admin-schedule" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><CalendarDays className="h-4 w-4" /> Órarend</TabsTrigger>}
+                {userRole === 'admin' && <TabsTrigger value="admin-grades" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><BarChart3 className="h-4 w-4" /> Jegyek</TabsTrigger>}
+                {userRole === 'admin' && <TabsTrigger value="admin-users" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><Users className="h-4 w-4" /> Userek</TabsTrigger>}
+                {userRole === 'admin' && <TabsTrigger value="admin-statistics" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><BarChart3 className="h-4 w-4" /> Statisztikák</TabsTrigger>}
+                <TabsTrigger value="profile" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none hover:bg-white/5 transition-colors flex items-center gap-2"><UserIcon className="h-4 w-4" /> Profil</TabsTrigger>
               </TabsList>
             </div>
           )}
@@ -1590,8 +1672,8 @@ export default function Dashboard() {
                           if (teacherName === 'Nagy Péter') {
                             teacherLessons = teacherLessons.filter((l: any) => l.Class !== '12.B')
                           }
-                          const teacherClasses = [...new Set(teacherLessons.map((lesson: any) => lesson.Class))].filter(Boolean)
-                          return teacherClasses.map(className => (
+                          const teacherClasses = [...new Set(teacherLessons.map((lesson: any) => lesson.Class))].filter(Boolean) as string[]
+                          return teacherClasses.map((className: string) => (
                             <option key={className} value={className}>{className}</option>
                           ))
                         })()}
@@ -1686,17 +1768,17 @@ export default function Dashboard() {
                               })
                             })
                             if (response.ok) {
-                              alert(`Jegy rögzítve: ${gradeForm.student} - ${gradeForm.grade} (${gradeForm.title})`)
+                              showAlert(`Jegy rögzítve: ${gradeForm.student} - ${gradeForm.grade} (${gradeForm.title})`, 'success')
                               setGradeForm({ student: '', grade: '', title: '', description: '' })
                               loadGrades(currentUser)
                             } else {
-                              alert('Hiba a jegy rögzítése során')
+                              showAlert('Hiba a jegy rögzítése során', 'error')
                             }
                           } catch (error) {
-                            alert('Hiba történt')
+                            showAlert('Hiba történt', 'error')
                           }
                         } else {
-                          alert('Töltsd ki az összes kötelező mezőt!')
+                          showAlert('Töltsd ki az összes kötelező mezőt!', 'warning')
                         }
                       }}
                       className="w-full bg-blue-600 hover:bg-blue-700"
@@ -1707,7 +1789,7 @@ export default function Dashboard() {
                     <Button
                       onClick={() => {
                         if (!selectedClass) {
-                          alert('Először válassz osztályt!')
+                          showAlert('Először válassz osztályt!', 'warning')
                           return
                         }
                         setShowClassGradeModal(true)
@@ -1742,8 +1824,8 @@ export default function Dashboard() {
                             if (teacherName === 'Nagy Péter') {
                               teacherLessons = teacherLessons.filter((l: any) => l.Class !== '12.B')
                             }
-                            const teacherClasses = [...new Set(teacherLessons.map((lesson: any) => lesson.Class))].filter(Boolean)
-                            return teacherClasses.map(className => (
+                            const teacherClasses = [...new Set(teacherLessons.map((lesson: any) => lesson.Class))].filter(Boolean) as string[]
+                            return teacherClasses.map((className: string) => (
                               <option key={className} value={className}>{className}</option>
                             ))
                           })()}
@@ -1822,13 +1904,13 @@ export default function Dashboard() {
                                                     method: 'DELETE'
                                                   })
                                                   if (response.ok) {
-                                                    alert('Jegy törölve!')
+                                                    showAlert('Jegy törölve!', 'success')
                                                     loadGrades(currentUser)
                                                   } else {
-                                                    alert('Hiba a törlés során')
+                                                    showAlert('Hiba a törlés során', 'error')
                                                   }
                                                 } catch (error) {
-                                                  alert('Hiba történt')
+                                                  showAlert('Hiba történt', 'error')
                                                 }
                                               }
                                             }}
@@ -1915,14 +1997,14 @@ export default function Dashboard() {
                                   if (response.ok) {
 
                                     loadMusicRequests()
-                                    alert(`Zene törölve: ${request.title || 'Zene kérés'}`)
+                                    showAlert(`Zene törölve: ${request.title || 'Zene kérés'}`, 'success')
                                   } else {
                                     const error = await response.json()
-                                    alert(`Hiba a törlés során: ${error.error || 'Ismeretlen hiba'}`)
+                                    showAlert(`Hiba a törlés során: ${error.error || 'Ismeretlen hiba'}`, 'error')
                                   }
                                 } catch (error) {
                                   console.error('Delete error:', error)
-                                  alert('Hiba történt a törlés során')
+                                  showAlert('Hiba történt a törlés során', 'error')
                                 }
                               }
                             }}
@@ -2032,22 +2114,50 @@ export default function Dashboard() {
               <CardHeader className="p-3 sm:p-6">
                 <CardTitle className="flex items-center text-sm sm:text-lg">
                   <QrCode className="h-4 w-4 sm:h-5 sm:w-5 mr-2" />
-                  QR Kód belépéshez
+                  QR Kód
                 </CardTitle>
               </CardHeader>
-              <CardContent className="text-center p-3 sm:p-6">
+              <CardContent className="p-3 sm:p-6">
                 {qrCode ? (
-                  <div className="space-y-3 sm:space-y-4">
-                    <img src={qrCode} alt="QR Code" className="mx-auto w-48 sm:w-64" />
-                    <p className="text-xs sm:text-sm text-gray-600">
-                      Mutasd fel ezt a QR kódot a portásnál belépéskor
+                  <div className="space-y-4 flex flex-col items-center">
+                    <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg w-40 sm:w-56 md:w-64">
+                      <p className="text-xs sm:text-sm font-semibold text-blue-900 dark:text-blue-200 flex items-center justify-center gap-2">
+                        <QrCode className="h-3 w-3 sm:h-4 sm:w-4" />
+                        {qrType === 'entry' ? 'Belépési QR kód' : 'Kilépési QR kód'}
+                      </p>
+                    </div>
+                    <div className="flex justify-center w-full">
+                      <img src={qrCode} alt="QR Code" className="w-40 sm:w-56 md:w-64" />
+                    </div>
+                    <div className="flex justify-center gap-2 w-40 sm:w-56 md:w-64">
+                      <Button
+                        onClick={() => generateUserQR('entry')}
+                        variant={qrType === 'entry' ? 'default' : 'outline'}
+                        className="text-xs sm:text-sm flex items-center justify-center gap-2 flex-1"
+                      >
+                        <LogIn className="h-4 w-4" />
+                        Belépés
+                      </Button>
+                      <Button
+                        onClick={() => generateUserQR('exit')}
+                        variant={qrType === 'exit' ? 'default' : 'outline'}
+                        className="text-xs sm:text-sm flex items-center justify-center gap-2 flex-1"
+                      >
+                        <LogOut className="h-4 w-4" />
+                        Kilépés
+                      </Button>
+                    </div>
+                    <p className="text-xs sm:text-sm text-gray-600 dark:text-gray-400 text-center">
+                      {qrType === 'entry' 
+                        ? 'Mutasd fel ezt a QR kódot a portásnál belépéskor'
+                        : 'Mutasd fel ezt a QR kódot a portásnál kilépéskor'
+                      }
                     </p>
-                    <Button onClick={generateUserQR} variant="outline" className="text-xs sm:text-sm">
-                      Új QR kód
-                    </Button>
                   </div>
                 ) : (
-                  <Skeleton className="h-64 w-64 mx-auto" />
+                  <div className="flex justify-center">
+                    <Skeleton className="h-40 w-40 sm:h-56 sm:w-56 md:h-64 md:w-64" />
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -2189,18 +2299,18 @@ export default function Dashboard() {
                               })
 
                               if (response.ok) {
-                                alert('Óra rögzítve!')
+                                showAlert('Óra rögzítve!', 'success')
                                 setLessonForm({ day: '', startTime: '', subject: '', teacher: '', class: '', room: '' })
                                 loadLessons(currentUser)
                               } else {
                                 const error = await response.json()
-                                alert(`Hiba: ${error.error || 'Ismeretlen hiba'}`)
+                                showAlert(`Hiba: ${error.error || 'Ismeretlen hiba'}`, 'error')
                               }
                             } catch (error) {
-                              alert('Hiba történt')
+                              showAlert('Hiba történt', 'error')
                             }
                           } else {
-                            alert('Töltsd ki az összes kötelező mezőt!')
+                            showAlert('Töltsd ki az összes kötelező mezőt!', 'warning')
                           }
                         }}
                         className="w-full bg-blue-600 hover:bg-blue-700"
@@ -2304,13 +2414,13 @@ export default function Dashboard() {
                                               method: 'DELETE'
                                             })
                                             if (response.ok) {
-                                              alert('Jegy törölve!')
+                                              showAlert('Jegy törölve!', 'success')
                                               loadGrades(currentUser)
                                             } else {
-                                              alert('Hiba a törlés során')
+                                              showAlert('Hiba a törlés során', 'error')
                                             }
                                           } catch (error) {
-                                            alert('Hiba történt')
+                                            showAlert('Hiba történt', 'error')
                                           }
                                         }
                                       }}
@@ -2334,7 +2444,7 @@ export default function Dashboard() {
 
           {userRole === 'admin' && (
             <TabsContent value="admin-users" className="space-y-3 sm:space-y-6">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6">
                 <Card className="border-none shadow-sm">
                   <CardHeader className="p-3 sm:p-6">
                     <CardTitle className="text-sm sm:text-lg">Tanár regisztráció</CardTitle>
@@ -2374,16 +2484,86 @@ export default function Dashboard() {
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium mb-1">Tantárgy</label>
-                        <input
-                          type="text"
-                          value={teacherForm.subject}
-                          onChange={(e) => setTeacherForm({ ...teacherForm, subject: e.target.value })}
-                          className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm"
-                          placeholder="pl. Matematika"
-                        />
+                        <label className="block text-sm font-medium mb-1">Tantárgyak</label>
+                        <div className="space-y-2">
+                          <select
+                            onChange={(e) => {
+                              const value = e.target.value
+                              if (value && !selectedSubjects.includes(value)) {
+                                const newSubjects = [...selectedSubjects, value]
+                                setSelectedSubjects(newSubjects)
+                                setTeacherForm({ ...teacherForm, subject: newSubjects.join(', ') })
+                              }
+                              e.target.value = ''
+                            }}
+                            className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm"
+                          >
+                            <option value="">Válassz tantárgyat...</option>
+                            <option value="Matematika">Matematika</option>
+                            <option value="Magyar nyelv és irodalom">Magyar nyelv és irodalom</option>
+                            <option value="Történelem">Történelem</option>
+                            <option value="Angol nyelv">Angol nyelv</option>
+                            <option value="Német nyelv">Német nyelv</option>
+                            <option value="Biológia">Biológia</option>
+                            <option value="Kémia">Kémia</option>
+                            <option value="Fizika">Fizika</option>
+                            <option value="Földrajz">Földrajz</option>
+                            <option value="Informatika">Informatika</option>
+                            <option value="Testnevelés">Testnevelés</option>
+                          </select>
+                          {selectedSubjects.length > 0 && (
+                            <div className="flex flex-wrap gap-2">
+                              {selectedSubjects.map((subject, index) => (
+                                <span
+                                  key={index}
+                                  className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-xs"
+                                >
+                                  {subject}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const newSubjects = selectedSubjects.filter((_, i) => i !== index)
+                                      setSelectedSubjects(newSubjects)
+                                      setTeacherForm({ ...teacherForm, subject: newSubjects.join(', ') })
+                                    }}
+                                    className="hover:text-red-600"
+                                  >
+                                    ×
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
+                    <div className="flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-md">
+                      <input
+                        type="checkbox"
+                        id="isHomeroom"
+                        checked={teacherForm.isHomeroom}
+                        onChange={(e) => setTeacherForm({ ...teacherForm, isHomeroom: e.target.checked })}
+                        className="w-4 h-4 text-blue-600 rounded"
+                      />
+                      <label htmlFor="isHomeroom" className="text-sm font-medium cursor-pointer">
+                        Osztályfőnök
+                      </label>
+                    </div>
+                    {teacherForm.isHomeroom && (
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Osztályfőnöki osztály</label>
+                        <select
+                          value={teacherForm.homeroomClass}
+                          onChange={(e) => setTeacherForm({ ...teacherForm, homeroomClass: e.target.value })}
+                          className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm"
+                        >
+                          <option value="">Válassz osztályt</option>
+                          {availableClasses.map(cls => (
+                            <option key={cls.name} value={cls.name}>{cls.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                     <Button
                       onClick={async () => {
                         if (teacherForm.email && teacherForm.password && teacherForm.fullName) {
@@ -2395,30 +2575,33 @@ export default function Dashboard() {
                                 email: teacherForm.email,
                                 password: teacherForm.password,
                                 fullName: teacherForm.fullName,
-                                role: 'teacher',
+                                role: teacherForm.isHomeroom ? 'homeroom_teacher' : 'teacher',
                                 subject: teacherForm.subject,
-                                classes: teacherForm.classes
+                                classes: teacherForm.classes,
+                                class: teacherForm.homeroomClass
                               })
                             })
 
                             if (response.ok) {
-                              alert(`Tanár regisztrálva: ${teacherForm.fullName}`)
-                              setTeacherForm({ email: '', password: '', fullName: '', subject: '', classes: [] })
+                              showAlert(`Tanár regisztrálva: ${teacherForm.fullName}`, 'success')
+                              setTeacherForm({ email: '', password: '', fullName: '', subject: '', classes: [], isHomeroom: false, homeroomClass: '' })
+                              setSelectedSubjects([])
                               loadAllUsers()
                             } else {
                               const error = await response.json()
-                              alert(`Hiba: ${error.error || 'Ismeretlen hiba'}`)
+                              showAlert(`Hiba: ${error.error || 'Ismeretlen hiba'}`, 'error')
                             }
                           } catch (error) {
-                            alert('Hiba történt')
+                            showAlert('Hiba történt', 'error')
                           }
                         } else {
-                          alert('Töltsd ki az összes kötelező mezőt!')
+                          showAlert('Töltsd ki az összes kötelező mezőt!', 'warning')
                         }
                       }}
-                      className="w-full bg-green-600 hover:bg-green-700"
+                      className="w-full bg-green-600 hover:bg-green-700 flex items-center justify-center gap-2"
                       size="sm"
                     >
+                      <UserIcon className="h-4 w-4" />
                       Tanár regisztrálása
                     </Button>
                   </CardContent>
@@ -2486,6 +2669,18 @@ export default function Dashboard() {
                         ))}
                       </select>
                     </div>
+                    <div className="flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-800 rounded-md">
+                      <input
+                        type="checkbox"
+                        id="isDJ"
+                        checked={studentForm.isDJ}
+                        onChange={(e) => setStudentForm({ ...studentForm, isDJ: e.target.checked })}
+                        className="w-4 h-4 text-blue-600 rounded"
+                      />
+                      <label htmlFor="isDJ" className="text-sm font-medium cursor-pointer">
+                        DJ szerepkör
+                      </label>
+                    </div>
                     <Button
                       onClick={async () => {
                         if (studentForm.email && studentForm.password && studentForm.fullName && studentForm.studentId) {
@@ -2497,30 +2692,31 @@ export default function Dashboard() {
                                 email: studentForm.email,
                                 password: studentForm.password,
                                 fullName: studentForm.fullName,
-                                role: 'student',
+                                role: studentForm.isDJ ? 'dj' : 'student',
                                 studentId: studentForm.studentId,
                                 class: studentForm.class || availableClasses[0]?.name
                               })
                             })
 
                             if (response.ok) {
-                              alert(`Diák regisztrálva: ${studentForm.fullName}`)
-                              setStudentForm({ email: '', password: '', fullName: '', studentId: '', class: '' })
+                              showAlert(`Diák regisztrálva: ${studentForm.fullName}`, 'success')
+                              setStudentForm({ email: '', password: '', fullName: '', studentId: '', class: '', isDJ: false })
                               loadAllUsers()
                             } else {
                               const error = await response.json()
-                              alert(`Hiba: ${error.error || 'Ismeretlen hiba'}`)
+                              showAlert(`Hiba: ${error.error || 'Ismeretlen hiba'}`, 'error')
                             }
                           } catch (error) {
-                            alert('Hiba történt')
+                            showAlert('Hiba történt', 'error')
                           }
                         } else {
-                          alert('Töltsd ki az összes kötelező mezőt!')
+                          showAlert('Töltsd ki az összes kötelező mezőt!', 'warning')
                         }
                       }}
-                      className="w-full bg-blue-600 hover:bg-blue-700"
+                      className="w-full bg-blue-600 hover:bg-blue-700 flex items-center justify-center gap-2"
                       size="sm"
                     >
+                      <BookOpen className="h-4 w-4" />
                       Diák regisztrálása
                     </Button>
                   </CardContent>
@@ -2530,29 +2726,37 @@ export default function Dashboard() {
               <Card className="border-none shadow-sm">
                 <CardHeader>
                   <CardTitle className="text-lg">Felhasználók kezelése</CardTitle>
-                  <div className="flex gap-4 mt-4">
-                    <select
-                      value={selectedClass}
-                      onChange={(e) => setSelectedClass(e.target.value)}
-                      className="px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm"
-                    >
-                      <option value="">Összes osztály</option>
-                      {availableClasses.map(cls => (
-                        <option key={cls.name} value={cls.name}>{cls.name}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={gradeForm.student}
-                      onChange={(e) => setGradeForm({ ...gradeForm, student: e.target.value })}
-                      className="px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm"
-                    >
-                      <option value="">Összes szerepkör</option>
-                      <option value="admin">Admin</option>
-                      <option value="teacher">Tanár</option>
-                      <option value="homeroom_teacher">Osztályfőnök</option>
-                      <option value="student">Diák</option>
-                      <option value="dj">DJ</option>
-                    </select>
+                  <div className="space-y-4 mt-4">
+                    <Input
+                      placeholder="Keresés név vagy email alapján..."
+                      value={userSearch}
+                      onChange={(e) => setUserSearch(e.target.value)}
+                      className="w-full"
+                    />
+                    <div className="flex gap-4">
+                      <select
+                        value={selectedClass}
+                        onChange={(e) => setSelectedClass(e.target.value)}
+                        className="px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm"
+                      >
+                        <option value="">Összes osztály</option>
+                        {availableClasses.map(cls => (
+                          <option key={cls.name} value={cls.name}>{cls.name}</option>
+                        ))}
+                      </select>
+                      <select
+                        value={gradeForm.student}
+                        onChange={(e) => setGradeForm({ ...gradeForm, student: e.target.value })}
+                        className="px-3 py-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm"
+                      >
+                        <option value="">Összes szerepkör</option>
+                        <option value="admin">Admin</option>
+                        <option value="teacher">Tanár</option>
+                        <option value="homeroom_teacher">Osztályfőnök</option>
+                        <option value="student">Diák</option>
+                        <option value="dj">DJ</option>
+                      </select>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -2561,7 +2765,10 @@ export default function Dashboard() {
                       const matchesClass = !selectedClass || user.class === selectedClass
                       const matchesRole = !gradeForm.student || user.role === gradeForm.student ||
                         (gradeForm.student === 'teacher' && user.role === 'homeroom_teacher')
-                      return matchesClass && matchesRole
+                      const matchesSearch = !userSearch ||
+                        (user.fullName || user.name || '').toLowerCase().includes(userSearch.toLowerCase()) ||
+                        (user.email || '').toLowerCase().includes(userSearch.toLowerCase())
+                      return matchesClass && matchesRole && matchesSearch
                     })
                       .sort((a, b) => (a.fullName || a.name || '').localeCompare(b.fullName || b.name || ''))
                       .map((user, index) => (
@@ -2603,17 +2810,17 @@ export default function Dashboard() {
                                     })
 
                                     if (response.ok) {
-                                      alert(`${user.fullName || user.name} áthelyezve: ${newClass}`)
+                                      showAlert(`${user.fullName || user.name} áthelyezve: ${newClass}`, 'success')
                                       loadAllUsers()
                                     } else {
                                       const error = await response.json()
-                                      alert(`Hiba: ${error.error || 'Ismeretlen hiba'}`)
+                                      showAlert(`Hiba: ${error.error || 'Ismeretlen hiba'}`, 'error')
                                     }
                                   } catch (error) {
-                                    alert('Hiba történt a módosítás során')
+                                    showAlert('Hiba történt a módosítás során', 'error')
                                   }
                                 } else {
-                                  alert('Csak dinamikus felhasználók módosíthatók')
+                                  showAlert('Csak dinamikus felhasználók módosíthatók', 'warning')
                                 }
                               }}
                               className="px-2 py-1 border rounded text-xs dark:bg-gray-700 dark:border-gray-600"
@@ -2639,17 +2846,17 @@ export default function Dashboard() {
                                     })
 
                                     if (response.ok) {
-                                      alert(`${user.fullName || user.name} szerepköre megváltoztatva: ${newRole}`)
+                                      showAlert(`${user.fullName || user.name} szerepköre megváltoztatva: ${newRole}`, 'success')
                                       loadAllUsers()
                                     } else {
                                       const error = await response.json()
-                                      alert(`Hiba: ${error.error || 'Ismeretlen hiba'}`)
+                                      showAlert(`Hiba: ${error.error || 'Ismeretlen hiba'}`, 'error')
                                     }
                                   } catch (error) {
-                                    alert('Hiba történt a módosítás során')
+                                    showAlert('Hiba történt a módosítás során', 'error')
                                   }
                                 } else {
-                                  alert('Csak dinamikus felhasználók módosíthatók')
+                                  showAlert('Csak dinamikus felhasználók módosíthatók', 'warning')
                                 }
                               }}
                               className="px-2 py-1 border rounded text-xs dark:bg-gray-700 dark:border-gray-600"
@@ -2675,16 +2882,16 @@ export default function Dashboard() {
                                       if (response.ok) {
                                         const result = await response.json()
                                         console.log('Törlés eredmény:', result)
-                                        alert(`${user.fullName || user.name} felhasználó sikeresen törölve a Firebase adatbázisból`)
+                                        showAlert(`${user.fullName || user.name} felhasználó sikeresen törölve a Firebase adatbázisból`, 'success')
                                         loadAllUsers()
                                       } else {
                                         const error = await response.json()
                                         console.error('Törlés hiba:', error)
-                                        alert(`Hiba: ${error.error || 'Törlés sikertelen'}`)
+                                        showAlert(`Hiba: ${error.error || 'Törlés sikertelen'}`, 'error')
                                       }
                                     } catch (error) {
                                       console.error('Törlés exception:', error)
-                                      alert('Hiba történt a törlés során')
+                                      showAlert('Hiba történt a törlés során', 'error')
                                     }
                                   }
                                 }}
@@ -2720,7 +2927,7 @@ export default function Dashboard() {
                       }
 
 
-                      const absencesByDate = attendance.reduce((acc, record) => {
+                      const absencesByDate = attendance.reduce((acc: Record<string, any[]>, record: any) => {
                         const date = record.date
                         if (!acc[date]) acc[date] = []
                         acc[date].push(record)
@@ -2729,7 +2936,7 @@ export default function Dashboard() {
 
                       return Object.entries(absencesByDate)
                         .sort(([a], [b]) => new Date(b).getTime() - new Date(a).getTime())
-                        .map(([date, records]) => {
+                        .map(([date, records]: [string, any[]]) => {
                           const isExpanded = expandedDates[date] || false
 
                           return (
@@ -2894,7 +3101,7 @@ export default function Dashboard() {
 
                       return Object.entries(attendanceByDate)
                         .sort(([a], [b]) => new Date(b).getTime() - new Date(a).getTime())
-                        .map(([date, records]) => {
+                        .map(([date, records]: [string, any[]]) => {
                           const isExpanded = expandedDates[date] || false
 
                           return (
@@ -3040,11 +3247,11 @@ export default function Dashboard() {
                                         })
                                       })
                                       if (response.ok) {
-                                        alert('Igazolás elfogadva!')
+                                        showAlert('Igazolás elfogadva!', 'success')
                                         loadExcuses()
                                       }
                                     } catch (error) {
-                                      alert('Hiba történt')
+                                      showAlert('Hiba történt', 'error')
                                     }
                                   }}
                                   className="bg-green-600 hover:bg-green-700"
@@ -3066,11 +3273,11 @@ export default function Dashboard() {
                                         })
                                       })
                                       if (response.ok) {
-                                        alert('Igazolás elutasítva!')
+                                        showAlert('Igazolás elutasítva!', 'info')
                                         loadExcuses()
                                       }
                                     } catch (error) {
-                                      alert('Hiba történt')
+                                      showAlert('Hiba történt', 'error')
                                     }
                                   }}
                                   className="border-red-300 text-red-600 hover:bg-red-50"
@@ -3175,7 +3382,7 @@ export default function Dashboard() {
                         <Button
                           onClick={async () => {
                             if (!excuseForm.excuseType) {
-                              alert('Válaszd ki az igazolás típusát!')
+                              showAlert('Válaszd ki az igazolás típusát!', 'warning')
                               return
                             }
                             try {
@@ -3193,13 +3400,13 @@ export default function Dashboard() {
                                 })
                               })
                               if (response.ok) {
-                                alert('Igazolás sikeresen beküldve!')
+                                showAlert('Igazolás sikeresen beküldve!', 'success')
                                 setSelectedAbsences([])
                                 setExcuseForm({ absenceIds: [], excuseType: '', description: '' })
                                 loadExcuses()
                               }
                             } catch (error) {
-                              alert('Hiba történt')
+                              showAlert('Hiba történt', 'error')
                             }
                           }}
                           className="w-full bg-blue-600 hover:bg-blue-700"
@@ -3297,18 +3504,45 @@ export default function Dashboard() {
                       />
                     </div>
                     <Button
-                      onClick={() => {
+                      onClick={async () => {
                         if (!selectedClass) {
-                          alert('Válassz osztályt!')
+                          showAlert('Válassz osztályt!', 'warning')
                           return
                         }
-                        const dummyLesson = {
-                          Subject: currentUser?.subject || 'Egyéb',
-                          Class: selectedClass,
-                          Day: 'Általános',
-                          StartTime: '00:00'
+                        if (!homeworkForm.title || !homeworkForm.description || !homeworkForm.dueDate) {
+                          showAlert('Töltsd ki az összes mezőt!', 'warning')
+                          return
                         }
-                        createHomeworkForLesson(dummyLesson)
+                        try {
+                          const lessonId = `Általános_00:00_${selectedClass}`
+                          const teacherId = currentUser?.id || user?.uid || user?.email
+
+                          const response = await fetch('/api/homework', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              title: homeworkForm.title,
+                              description: homeworkForm.description,
+                              dueDate: homeworkForm.dueDate,
+                              teacherId: teacherId,
+                              teacherName: currentUser?.fullName || currentUser?.name,
+                              subject: currentUser?.subject || 'Egyéb',
+                              className: selectedClass,
+                              lessonId: lessonId,
+                              attachments: []
+                            })
+                          })
+
+                          if (response.ok) {
+                            showAlert('Házi feladat sikeresen kiadva!', 'success')
+                            setHomeworkForm({ title: '', description: '', dueDate: '', lessonId: '', attachments: [] })
+                            loadHomework()
+                          } else {
+                            showAlert('Hiba a házi feladat kiadása során', 'error')
+                          }
+                        } catch (error) {
+                          showAlert('Hiba történt', 'error')
+                        }
                       }}
                       className="w-full bg-blue-600 hover:bg-blue-700"
                       size="sm"
@@ -3346,7 +3580,7 @@ export default function Dashboard() {
                                       setShowHomeworkModal(true)
                                     }
                                   } catch (error) {
-                                    alert('Hiba a beadások betöltése során')
+                                    showAlert('Hiba a beadások betöltése során', 'error')
                                   }
                                 }}
                               >
@@ -3373,6 +3607,15 @@ export default function Dashboard() {
             </TabsContent>
           )}
 
+          {userRole === 'admin' && (
+            <TabsContent value="admin-statistics" className="space-y-3 sm:space-y-6">
+              <iframe
+                src="/admin/statistics"
+                className="w-full h-screen border-0 rounded-lg"
+                title="Admin Statisztikák"
+              />
+            </TabsContent>
+          )}
 
           <TabsContent value="student-excuses" className="space-y-6">
             <Card className="glass-card border-0 shadow-lg mb-6">
@@ -3829,7 +4072,7 @@ export default function Dashboard() {
             </div>
           </div>
         )}
-      < CustomAlert
+      <CustomAlert
         open={alertData.isOpen}
         onClose={() => setAlertData({ ...alertData, isOpen: false })}
         title={alertData.title}
@@ -3904,7 +4147,7 @@ export default function Dashboard() {
         teacherName={currentUser?.fullName || currentUser?.name || ''}
         onSave={handleClassGradeSave}
       />
-    </div >
+    </div>
   )
 }
 

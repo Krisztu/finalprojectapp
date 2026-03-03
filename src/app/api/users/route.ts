@@ -219,11 +219,30 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Felhasználó nem található' }, { status: 404 })
     }
 
+    const userData = userDoc.data()
+    const uid = userData?.uid
+
+    // Törlés a Firestore-ból
     await userRef.delete()
+
+    // Törlés az Authentication-ből is
+    if (uid) {
+      try {
+        await auth.deleteUser(uid)
+      } catch (authError: any) {
+        console.error('Authentication törlés hiba:', authError)
+        // Ha az auth törlés sikertelen, de a Firestore törlés sikeres volt
+        return NextResponse.json({
+          success: true,
+          warning: 'Felhasználó törölve a Firestore-ból, de az Authentication törlés sikertelen',
+          deletedId: id
+        })
+      }
+    }
 
     return NextResponse.json({
       success: true,
-      message: 'Felhasználó törölve a Firestore-ból',
+      message: 'Felhasználó törölve a Firestore-ból és az Authentication-ből',
       deletedId: id
     })
   } catch (error: any) {

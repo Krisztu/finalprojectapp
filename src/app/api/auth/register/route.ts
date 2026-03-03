@@ -23,9 +23,12 @@ export async function POST(request: NextRequest) {
       createdAt: new Date().toISOString()
     }
 
-    if (role === 'teacher') {
+    if (role === 'teacher' || role === 'homeroom_teacher') {
       userData.subject = subject || ''
       userData.classes = classes || []
+      if (role === 'homeroom_teacher' && userClass) {
+        userData.class = userClass
+      }
     } else if (role === 'student' || role === 'dj') {
       userData.studentId = studentId || ''
       userData.class = userClass || '12.A'

@@ -5,6 +5,8 @@ node_modules/
 
 # Testing
 /coverage
+/test-results/
+/playwright-report/
 
 # Next.js
 /.next/
@@ -24,6 +26,7 @@ yarn-error.log*
 
 # Local env files
 .env*.local
+.env
 
 # Vercel
 .vercel
@@ -35,9 +38,13 @@ next-env.d.ts
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+*~
 
 # OS
 Thumbs.db
+.DS_Store
 
 # Firebase
 firebase-debug.log
@@ -45,3 +52,8 @@ firestore-debug.log
 
 # Test files
 test-firebase.js
+test-results.json
+
+# Temporary files
+*.tmp
+*.temp
