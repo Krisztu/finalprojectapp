@@ -3,7 +3,12 @@
 ## 📋 Áttekintés
 
 Magyar oktatási rendszerhez igazított viselkedési értékelés rendszer.
-Tanárok rögzítik a diákok viselkedését, szülőket értesítik, és trend követés.
+Szaktanári/Osztályfőnöki/Igazgatói figyelmeztetések és dicséretek.
+
+**Jogosultságok:**
+- **Szaktanári**: Bármely tanár adhat szaktanári dicséret/figyelmeztetést
+- **Osztályfőnöki**: Csak osztályfőnök adhat osztályfőnöki dicséret/figyelmeztetést
+- **Igazgatói**: Csak igazgató adhat igazgatói dicséret/figyelmeztetést
 
 ---
 
@@ -19,18 +24,17 @@ interface BehaviorRecord {
   studentClass: string
   
   // Viselkedés típusa (magyar oktatási rendszer)
-  type: 'positive' | 'negative'
-  category: 'fegyelem' | 'szorgalom' | 'közreműködés' | 'tisztelet' | 'tanulmányi' | 'egyéb'
+  type: 'dicseret' | 'figyelmezetes'
+  level: 'szaktanari' | 'osztalyfonoki' | 'igazgatoi'
   
   // Leírás
   description: string
+  reason: string // Indoklás
   
-  // Tanár
+  // Tanár/Osztályfőnök/Igazgató
   recordedBy: string
   recordedByName: string
-  
-  // Pontok
-  points: number // +1 vagy -1
+  recordedByRole: 'teacher' | 'class_teacher' | 'principal'
   
   // Dátum
   createdAt: Date
@@ -38,6 +42,9 @@ interface BehaviorRecord {
   // Szülői értesítés
   parentNotified: boolean
   notifiedAt?: Date
+  
+  // Intézkedés (figyelmeztetés esetén)
+  actionTaken?: string
 }
 ```
 
@@ -46,22 +53,28 @@ interface BehaviorRecord {
 // Firestore: /users/{studentId}/behavior_summary
 interface BehaviorSummary {
   studentId: string
-  totalPoints: number
-  positiveCount: number
-  negativeCount: number
   
-  // Kategóriánként
-  byCategory: {
-    discipline: number
-    cooperation: number
-    participation: number
-    respect: number
-    other: number
-  }
+  // Dicséretek
+  dicseretCount: number
+  szaktanariDicseret: number
+  osztalyfonokiDicseret: number
+  igazgatoiDicseret: number
+  
+  // Figyelmeztetések
+  figyelmeztetesCount: number
+  szaktanariFigyelmezetes: number
+  osztalyfonokiFigyelmezetes: number
+  igazgatoiFigyelmezetes: number
   
   // Trend
-  thisMonth: number
-  lastMonth: number
+  thisMonth: {
+    dicseret: number
+    figyelmezetes: number
+  }
+  lastMonth: {
+    dicseret: number
+    figyelmezetes: number
+  }
   
   updatedAt: Date
 }
@@ -78,10 +91,11 @@ interface CreateBehaviorRequest {
   studentId: string
   studentName: string
   studentClass: string
-  type: 'positive' | 'negative'
-  category: string
+  type: 'dicseret' | 'figyelmezetes'
+  level: 'szaktanari' | 'osztalyfonoki' | 'igazgatoi'
   description: string
-  points: number
+  reason: string
+  actionTaken?: string // Figyelmeztetés esetén
 }
 
 interface CreateBehaviorResponse {
@@ -106,8 +120,8 @@ interface GetBehaviorResponse {
 // PUT /api/behavior/:id
 interface UpdateBehaviorRequest {
   description?: string
-  points?: number
-  category?: string
+  reason?: string
+  actionTaken?: string
 }
 ```
 
@@ -126,49 +140,59 @@ interface ClassBehaviorStatsResponse {
   className: string
   students: {
     name: string
-    totalPoints: number
-    positiveCount: number
-    negativeCount: number
+    dicseretCount: number
+    figyelmeztetesCount: number
   }[]
-  averagePoints: number
-  topStudents: string[]
-  bottomStudents: string[]
+  totalDicseret: number
+  totalFigyelmezetes: number
+  topStudents: string[] // Legtöbb dicséret
+  needsAttention: string[] // Legtöbb figyelmeztetés
 }
 ```
 
 ---
 
-## 📊 Magyar Oktatási Rendszer Kategóriák
+## 📊 Magyar Oktatási Rendszer - Viselkedési Értékelés
 
-### Fegyelem (Discipline)
-- Késés az órára
-- Hiányzás engedély nélkül
-- Zavar az órán
-- Szabályok megsértése
+### Dicséretek
 
-### Szorgalom (Diligence)
-- Házi feladat elkészítése
-- Felkészülés az órára
-- Tanulási erőfeszítés
-- Fejlődés mutatása
+#### Szaktanári Dicséret
+- Kiemelkedő teljesítmény az adott tantárgyban
+- Példamutató viselkedés az órán
+- Segítőkészség társak felé
+- Aktív órai részvétel
 
-### Közreműködés (Cooperation)
-- Csoportmunkában való részvétel
-- Társaknak nyújtott segítség
-- Osztálytársak támogatása
-- Közös projektek
+#### Osztályfőnöki Dicséret
+- Példamutató magatartás az osztályban
+- Közösségi munka
+- Folyamatos fejlődés
+- Iskolai rendezvényeken való aktív részvétel
 
-### Tisztelet (Respect)
-- Tanár tisztelete
-- Társak tisztelete
-- Iskolai szabályok betartása
-- Tulajdon megóvása
+#### Igazgatói Dicséret
+- Kiemelkedő tanulmányi eredmény
+- Az iskola hírnevének öregbítése
+- Versenyeken elért eredmények
+- Példamutató magatartás hosszú távon
 
-### Tanulmányi (Academic)
-- Jó teljesítmény
-- Fejlődés az előző időszakhoz képest
-- Kitűnő munka
-- Versenyeken való részvétel
+### Figyelmeztetések
+
+#### Szaktanári Figyelmeztetés
+- Felkészületlen az órára
+- Zavaró magatartás
+- Házi feladat hiánya
+- Fegyelmezetlenség az órán
+
+#### Osztályfőnöki Figyelmeztetés
+- Ismétlődő fegyelmi problémák
+- Igazolatlan hiányzás
+- Társakkal szembeni helytelen viselkedés
+- Iskolai szabályok megsértése
+
+#### Igazgatói Figyelmeztetés
+- Súlyos fegyelmi vétség
+- Ismétlődő osztályfőnöki figyelmeztetések
+- Veszélyeztetés (saját vagy mások)
+- Iskolai tulajdon megrongálása
 
 ---
 
@@ -192,9 +216,9 @@ export class BehaviorService {
 
     const docRef = await db.collection('behavior_records').add(record)
 
-    // Szülő értesítése (negatív viselkedés)
-    if (data.type === 'negative') {
-      await this.notifyParent(data.studentId, data.description)
+    // Szülő értesítése (figyelmeztetés esetén)
+    if (data.type === 'figyelmezetes') {
+      await this.notifyParent(data.studentId, data.level, data.description)
     }
 
     // Summary frissítése
@@ -203,19 +227,25 @@ export class BehaviorService {
     return docRef.id
   }
 
-  private async notifyParent(studentId: string, description: string) {
+  private async notifyParent(studentId: string, level: string, description: string) {
     const parentChildren = await db
       .collection('parent_children')
       .where('childId', '==', studentId)
       .get()
+
+    const levelText = {
+      szaktanari: 'Szaktanári',
+      osztalyfonoki: 'Osztályfőnöki',
+      igazgatoi: 'Igazgatói'
+    }[level]
 
     for (const doc of parentChildren.docs) {
       const parentId = doc.data().parentId
       await this.notificationService.createNotification(
         parentId,
         'behavior',
-        'Viselkedési probléma',
-        `Gyermekednél viselkedési probléma: ${description}`,
+        `${levelText} Figyelmeztetés`,
+        `Gyermeke ${levelText.toLowerCase()} figyelmeztetést kapott: ${description}`,
         { studentId }
       )
     }
@@ -231,17 +261,14 @@ export class BehaviorService {
     
     const summary = {
       studentId,
-      totalPoints: data.reduce((sum, r) => sum + r.points, 0),
-      positiveCount: data.filter(r => r.type === 'positive').length,
-      negativeCount: data.filter(r => r.type === 'negative').length,
-      byCategory: {
-        fegyelem: data.filter(r => r.category === 'fegyelem').length,
-        szorgalom: data.filter(r => r.category === 'szorgalom').length,
-        közreműködés: data.filter(r => r.category === 'közreműködés').length,
-        tisztelet: data.filter(r => r.category === 'tisztelet').length,
-        tanulmányi: data.filter(r => r.category === 'tanulmányi').length,
-        egyéb: data.filter(r => r.category === 'egyéb').length
-      },
+      dicseretCount: data.filter(r => r.type === 'dicseret').length,
+      szaktanariDicseret: data.filter(r => r.type === 'dicseret' && r.level === 'szaktanari').length,
+      osztalyfonokiDicseret: data.filter(r => r.type === 'dicseret' && r.level === 'osztalyfonoki').length,
+      igazgatoiDicseret: data.filter(r => r.type === 'dicseret' && r.level === 'igazgatoi').length,
+      figyelmeztetesCount: data.filter(r => r.type === 'figyelmezetes').length,
+      szaktanariFigyelmezetes: data.filter(r => r.type === 'figyelmezetes' && r.level === 'szaktanari').length,
+      osztalyfonokiFigyelmezetes: data.filter(r => r.type === 'figyelmezetes' && r.level === 'osztalyfonoki').length,
+      igazgatoiFigyelmezetes: data.filter(r => r.type === 'figyelmezetes' && r.level === 'igazgatoi').length,
       updatedAt: new Date()
     }
 
@@ -324,13 +351,15 @@ import { Button } from '@/shared/components/ui/button'
 import { Textarea } from '@/shared/components/ui/textarea'
 
 export function BehaviorRecorder({ studentId, studentName }: any) {
-  const [type, setType] = useState<'positive' | 'negative'>('positive')
-  const [category, setCategory] = useState('cooperation')
+  const [type, setType] = useState<'dicseret' | 'figyelmezetes'>('dicseret')
+  const [level, setLevel] = useState<'szaktanari' | 'osztalyfonoki' | 'igazgatoi'>('szaktanari')
   const [description, setDescription] = useState('')
+  const [reason, setReason] = useState('')
+  const [actionTaken, setActionTaken] = useState('')
   const [loading, setLoading] = useState(false)
 
   const handleSubmit = async () => {
-    if (!description.trim()) return
+    if (!description.trim() || !reason.trim()) return
 
     setLoading(true)
     try {
@@ -341,14 +370,17 @@ export function BehaviorRecorder({ studentId, studentName }: any) {
           studentId,
           studentName,
           type,
-          category,
+          level,
           description,
-          points: type === 'positive' ? 1 : -1
+          reason,
+          actionTaken: type === 'figyelmezetes' ? actionTaken : undefined
         })
       })
 
       if (response.ok) {
         setDescription('')
+        setReason('')
+        setActionTaken('')
         alert('Viselkedés rögzítve!')
       }
     } catch (error) {

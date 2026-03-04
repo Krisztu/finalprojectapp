@@ -4,35 +4,43 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/components/ui/tabs'
 import {
-  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
+  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts'
 import { TrendingUp } from 'lucide-react'
+import { dataCache } from '@/lib/dataCache'
+import { useSearchParams } from 'next/navigation'
+
+const STATS_CACHE_KEY = 'admin_statistics'
 
 export default function AdminStatistics() {
+  const searchParams = useSearchParams()
+  const isDarkParam = searchParams.get('dark') === 'true'
   const [stats, setStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
-  const [isDark, setIsDark] = useState(false)
 
   useEffect(() => {
-    const checkDark = () => setIsDark(document.documentElement.classList.contains('dark'))
-    checkDark()
-    const observer = new MutationObserver(checkDark)
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] })
+    if (isDarkParam) {
+      document.documentElement.classList.add('dark')
+    } else {
+      document.documentElement.classList.remove('dark')
+    }
+  }, [isDarkParam])
+
+  useEffect(() => {
     loadStatistics()
-    return () => observer.disconnect()
   }, [])
 
   const loadStatistics = async () => {
     try {
-      const controller = new AbortController()
-      const timeout = setTimeout(() => controller.abort(), 10000)
-      
-      const response = await fetch('/api/admin/statistics', { signal: controller.signal })
-      clearTimeout(timeout)
-      
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      const data = await response.json()
+      const data = await dataCache.get(
+        STATS_CACHE_KEY,
+        async () => {
+          const response = await fetch('/api/admin/statistics')
+          if (!response.ok) throw new Error(`HTTP ${response.status}`)
+          return response.json()
+        }
+      )
       setStats(data)
     } catch (error) {
       console.error('Statisztikák hiba:', error)
@@ -42,90 +50,63 @@ export default function AdminStatistics() {
     }
   }
 
-  if (loading) return <div className="p-8 text-center" style={{ color: isDark ? '#fff' : '#000' }}>Betöltés...</div>
-  if (!stats || !stats.today) return <div className="p-8 text-center" style={{ color: isDark ? '#fff' : '#000' }}>Hiba: {stats?.error || 'Adatok betöltése sikertelen'}</div>
+  if (loading) return <div className="p-8 text-center dark:text-white">Betöltés...</div>
+  if (!stats) return <div className="p-8 text-center dark:text-white">Hiba az adatok betöltésekor</div>
 
   return (
-    <div className="min-h-screen p-3 sm:p-6" style={{ backgroundColor: isDark ? '#0f172a' : '#f9fafb', minHeight: '100vh' }}>
-      <h1 className="text-2xl sm:text-3xl font-bold mb-6" style={{ color: isDark ? '#fff' : '#000' }}>Admin Statisztikák</h1>
+    <div className="space-y-4 dark:bg-slate-950 dark:text-white min-h-screen p-4">
+      <h2 className="text-2xl font-bold dark:text-white">Admin Statisztikák</h2>
 
       <Tabs defaultValue="overview" className="w-full">
-        <div className="overflow-x-auto pb-2">
-          <TabsList className="inline-flex w-auto min-w-full" style={{ backgroundColor: isDark ? '#1e293b' : '#f3f4f6' }}>
-            <TabsTrigger value="overview" style={{ color: isDark ? '#d1d5db' : '#000' }}>Áttekintés</TabsTrigger>
-            <TabsTrigger value="users" style={{ color: isDark ? '#d1d5db' : '#000' }}>Felhasználók</TabsTrigger>
-            <TabsTrigger value="grades" style={{ color: isDark ? '#d1d5db' : '#000' }}>Jegyek</TabsTrigger>
-            <TabsTrigger value="attendance" style={{ color: isDark ? '#d1d5db' : '#000' }}>Mulasztások</TabsTrigger>
-            <TabsTrigger value="behavior" style={{ color: isDark ? '#d1d5db' : '#000' }}>Viselkedés</TabsTrigger>
-          </TabsList>
-        </div>
+        <TabsList className="grid w-full grid-cols-5 dark:bg-slate-800">
+          <TabsTrigger value="overview" className="dark:text-white dark:data-[state=active]:bg-slate-700">Áttekintés</TabsTrigger>
+          <TabsTrigger value="users" className="dark:text-white dark:data-[state=active]:bg-slate-700">Felhasználók</TabsTrigger>
+          <TabsTrigger value="grades" className="dark:text-white dark:data-[state=active]:bg-slate-700">Jegyek</TabsTrigger>
+          <TabsTrigger value="attendance" className="dark:text-white dark:data-[state=active]:bg-slate-700">Mulasztások</TabsTrigger>
+          <TabsTrigger value="behavior" className="dark:text-white dark:data-[state=active]:bg-slate-700">Viselkedés</TabsTrigger>
+        </TabsList>
 
-        {/* ÁTTEKINTÉS */}
-        <TabsContent value="overview" className="space-y-4 sm:space-y-6 mt-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-            <StatCard title="Összes Felhasználó" value={stats.today.users.total} color="blue" isDark={isDark} />
-            <StatCard title="Diákok" value={stats.today.users.students} color="green" isDark={isDark} />
-            <StatCard title="Tanárok" value={stats.today.users.teachers} color="orange" isDark={isDark} />
-            <StatCard title="Szülők" value={stats.today.users.parents} color="purple" isDark={isDark} />
+        <TabsContent value="overview" className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <StatCard title="Összes Felhasználó" value={stats.today.users.total} color="blue" />
+            <StatCard title="Diákok" value={stats.today.users.students} color="green" />
+            <StatCard title="Tanárok" value={stats.today.users.teachers} color="orange" />
+            <StatCard title="Szülők" value={stats.today.users.parents} color="purple" />
           </div>
 
-          <Card style={{ backgroundColor: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e5e7eb' }}>
+          <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-lg sm:text-2xl" style={{ color: isDark ? '#fff' : '#000' }}>
-                <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5" />
-                Felhasználók Trendje (30 nap)
-              </CardTitle>
+              <CardTitle className="text-sm">Top Osztályok (Átlag szerint)</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={stats.thisMonth}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Line type="monotone" dataKey="users.total" stroke="#3b82f6" name="Összes" strokeWidth={2} />
-                  <Line type="monotone" dataKey="users.students" stroke="#10b981" name="Diákok" strokeWidth={2} />
-                  <Line type="monotone" dataKey="users.teachers" stroke="#f59e0b" name="Tanárok" strokeWidth={2} />
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          <Card style={{ backgroundColor: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e5e7eb' }}>
-            <CardHeader>
-              <CardTitle className="text-lg sm:text-2xl" style={{ color: isDark ? '#fff' : '#000' }}>Top Osztályok (Átlag szerint)</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={600}>
                 <BarChart data={stats.topClasses}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis dataKey="name" />
-                  <YAxis />
+                  <YAxis domain={[0, 5]} ticks={[0, 1, 2, 3, 4, 5]} />
                   <Tooltip />
-                  <Bar dataKey="averageGrade" fill="#3b82f6" />
+                  <Bar dataKey="averageGrade" fill="#3b82f6" animationDuration={600} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* FELHASZNÁLÓK */}
-        <TabsContent value="users" className="space-y-4 sm:space-y-6 mt-4">
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
-            <StatCard title="Összes" value={stats.today.users.total} color="blue" isDark={isDark} />
-            <StatCard title="Diákok" value={stats.today.users.students} color="green" isDark={isDark} />
-            <StatCard title="Tanárok" value={stats.today.users.teachers} color="orange" isDark={isDark} />
-            <StatCard title="Szülők" value={stats.today.users.parents} color="purple" isDark={isDark} />
-            <StatCard title="DJ" value={stats.today.users.djs} color="pink" isDark={isDark} />
+        <TabsContent value="users" className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <StatCard title="Összes" value={stats.today.users.total} color="blue" />
+            <StatCard title="Diákok" value={stats.today.users.students} color="green" />
+            <StatCard title="Tanárok" value={stats.today.users.teachers} color="orange" />
+            <StatCard title="Szülők" value={stats.today.users.parents} color="purple" />
+            <StatCard title="DJ" value={stats.today.users.djs} color="pink" />
           </div>
 
-          <Card style={{ backgroundColor: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e5e7eb' }}>
+          <Card className="dark:bg-slate-800 dark:border-slate-700">
             <CardHeader>
-              <CardTitle className="text-lg sm:text-2xl" style={{ color: isDark ? '#fff' : '#000' }}>Felhasználók Eloszlása</CardTitle>
+              <CardTitle className="text-sm dark:text-white">Felhasználók Eloszlása</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={600}>
                 <PieChart>
                   <Pie
                     data={[
@@ -138,35 +119,35 @@ export default function AdminStatistics() {
                     cy="50%"
                     labelLine={false}
                     label={({ name, value }) => `${name}: ${value}`}
-                    outerRadius={80}
+                    outerRadius={250}
                     fill="#8884d8"
                     dataKey="value"
+                    animationDuration={600}
                   >
                     {['#10b981', '#f59e0b', '#8b5cf6', '#ec4899'].map((color, index) => (
                       <Cell key={`cell-${index}`} fill={color} />
                     ))}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip contentStyle={{ backgroundColor: isDarkParam ? '#1e293b' : '#fff', border: `1px solid ${isDarkParam ? '#475569' : '#ccc'}`, color: isDarkParam ? '#fff' : '#000' }} />
                 </PieChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* JEGYEK */}
-        <TabsContent value="grades" className="space-y-4 sm:space-y-6 mt-4">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-            <StatCard title="Összes Jegy" value={stats.today.grades.total} color="blue" isDark={isDark} />
-            <StatCard title="Átlag" value={stats.today.grades.average.toFixed(2)} color="green" isDark={isDark} />
-            <StatCard title="5-ös Jegyek" value={stats.today.grades.byGrade[5]} color="purple" isDark={isDark} />
+        <TabsContent value="grades" className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <StatCard title="Összes Jegy" value={stats.today.grades.total} color="blue" />
+            <StatCard title="Átlag" value={stats.today.grades.average.toFixed(2)} color="green" />
+            <StatCard title="5-ös Jegyek" value={stats.today.grades.byGrade[5]} color="purple" />
           </div>
 
-          <Card style={{ backgroundColor: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e5e7eb' }}>
+          <Card className="dark:bg-slate-800 dark:border-slate-700">
             <CardHeader>
-              <CardTitle className="text-lg sm:text-2xl" style={{ color: isDark ? '#fff' : '#000' }}>Jegyek Eloszlása</CardTitle>
+              <CardTitle className="text-sm dark:text-white">Jegyek Eloszlása</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={600}>
                 <PieChart>
                   <Pie
                     data={[
@@ -180,109 +161,90 @@ export default function AdminStatistics() {
                     cy="50%"
                     labelLine={false}
                     label={({ name, value }) => `${name}: ${value}`}
-                    outerRadius={80}
+                    outerRadius={250}
                     fill="#8884d8"
                     dataKey="value"
+                    animationDuration={600}
                   >
                     {['#ef4444', '#f97316', '#eab308', '#84cc16', '#22c55e'].map((color, index) => (
                       <Cell key={`cell-${index}`} fill={color} />
                     ))}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip contentStyle={{ backgroundColor: isDarkParam ? '#1e293b' : '#fff', border: `1px solid ${isDarkParam ? '#475569' : '#ccc'}`, color: isDarkParam ? '#fff' : '#000' }} />
                 </PieChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          <Card style={{ backgroundColor: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e5e7eb' }}>
-            <CardHeader>
-              <CardTitle className="text-lg sm:text-2xl" style={{ color: isDark ? '#fff' : '#000' }}>Jegyek Trendje</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={stats.thisMonth}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Line type="monotone" dataKey="grades.average" stroke="#3b82f6" name="Átlag" strokeWidth={2} />
-                </LineChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* MULASZTÁSOK */}
-        <TabsContent value="attendance" className="space-y-4 sm:space-y-6 mt-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-            <StatCard title="Jelenlét %" value={`${stats.today.attendance.percentage.toFixed(1)}%`} color="green" isDark={isDark} />
-            <StatCard title="Jelen" value={stats.today.attendance.present} color="blue" isDark={isDark} />
-            <StatCard title="Hiányzó" value={stats.today.attendance.absent} color="red" isDark={isDark} />
-            <StatCard title="Igazolt" value={stats.today.attendance.excused} color="orange" isDark={isDark} />
+        <TabsContent value="attendance" className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <StatCard title="Jelenlét %" value={`${stats.today.attendance.percentage.toFixed(1)}%`} color="green" />
+            <StatCard title="Jelen" value={stats.today.attendance.present} color="blue" />
+            <StatCard title="Hiányzó" value={stats.today.attendance.absent} color="red" />
+            <StatCard title="Igazolt" value={stats.today.attendance.excused} color="orange" />
           </div>
 
-          <Card style={{ backgroundColor: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e5e7eb' }}>
+          <Card className="dark:bg-slate-800 dark:border-slate-700">
             <CardHeader>
-              <CardTitle className="text-lg sm:text-2xl" style={{ color: isDark ? '#fff' : '#000' }}>Jelenlét Trendje</CardTitle>
+              <CardTitle className="text-sm dark:text-white">Jelenlét Trendje</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={stats.thisMonth}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis domain={[0, 100]} />
-                  <Tooltip />
+                  <CartesianGrid strokeDasharray="3 3" stroke={isDarkParam ? '#475569' : '#ccc'} />
+                  <XAxis dataKey="date" stroke={isDarkParam ? '#94a3b8' : '#666'} />
+                  <YAxis domain={[0, 100]} stroke={isDarkParam ? '#94a3b8' : '#666'} />
+                  <Tooltip contentStyle={{ backgroundColor: isDarkParam ? '#1e293b' : '#fff', border: `1px solid ${isDarkParam ? '#475569' : '#ccc'}`, color: isDarkParam ? '#fff' : '#000' }} />
                   <Legend />
-                  <Line type="monotone" dataKey="attendance.percentage" stroke="#10b981" name="Jelenlét %" strokeWidth={2} />
+                  <Line type="monotone" dataKey="attendance.percentage" stroke="#10b981" name="Jelenlét %" strokeWidth={2} animationDuration={600} />
                 </LineChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
 
-          <Card style={{ backgroundColor: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e5e7eb' }}>
+          <Card className="dark:bg-slate-800 dark:border-slate-700">
             <CardHeader>
-              <CardTitle className="text-lg sm:text-2xl" style={{ color: isDark ? '#fff' : '#000' }}>Mulasztások Eloszlása</CardTitle>
+              <CardTitle className="text-sm dark:text-white">Mulasztások Eloszlása</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={stats.thisMonth}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
+                  <CartesianGrid strokeDasharray="3 3" stroke={isDarkParam ? '#475569' : '#ccc'} />
+                  <XAxis dataKey="date" stroke={isDarkParam ? '#94a3b8' : '#666'} />
+                  <YAxis stroke={isDarkParam ? '#94a3b8' : '#666'} />
+                  <Tooltip contentStyle={{ backgroundColor: isDarkParam ? '#1e293b' : '#fff', border: `1px solid ${isDarkParam ? '#475569' : '#ccc'}`, color: isDarkParam ? '#fff' : '#000' }} />
                   <Legend />
-                  <Bar dataKey="attendance.present" fill="#10b981" name="Jelen" />
-                  <Bar dataKey="attendance.absent" fill="#ef4444" name="Hiányzó" />
-                  <Bar dataKey="attendance.excused" fill="#f59e0b" name="Igazolt" />
+                  <Bar dataKey="attendance.present" fill="#10b981" name="Jelen" animationDuration={600} />
+                  <Bar dataKey="attendance.absent" fill="#ef4444" name="Hiányzó" animationDuration={600} />
+                  <Bar dataKey="attendance.excused" fill="#f59e0b" name="Igazolt" animationDuration={600} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* VISELKEDÉS */}
-        <TabsContent value="behavior" className="space-y-4 sm:space-y-6 mt-4">
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4">
-            <StatCard title="Pozitív" value={stats.today.behavior.positive} color="green" isDark={isDark} />
-            <StatCard title="Negatív" value={stats.today.behavior.negative} color="red" isDark={isDark} />
-            <StatCard title="Átlag Pont" value={stats.today.behavior.average.toFixed(2)} color="blue" isDark={isDark} />
+        <TabsContent value="behavior" className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <StatCard title="Pozitív" value={stats.today.behavior.positive} color="green" />
+            <StatCard title="Negatív" value={stats.today.behavior.negative} color="red" />
+            <StatCard title="Átlag Pont" value={stats.today.behavior.average.toFixed(2)} color="blue" />
           </div>
 
-          <Card style={{ backgroundColor: isDark ? '#1e293b' : '#fff', borderColor: isDark ? '#334155' : '#e5e7eb' }}>
+          <Card className="dark:bg-slate-800 dark:border-slate-700">
             <CardHeader>
-              <CardTitle className="text-lg sm:text-2xl" style={{ color: isDark ? '#fff' : '#000' }}>Viselkedés Trendje</CardTitle>
+              <CardTitle className="text-sm dark:text-white">Viselkedés Trendje</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={stats.thisMonth}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
+                  <CartesianGrid strokeDasharray="3 3" stroke={isDarkParam ? '#475569' : '#ccc'} />
+                  <XAxis dataKey="date" stroke={isDarkParam ? '#94a3b8' : '#666'} />
+                  <YAxis stroke={isDarkParam ? '#94a3b8' : '#666'} />
+                  <Tooltip contentStyle={{ backgroundColor: isDarkParam ? '#1e293b' : '#fff', border: `1px solid ${isDarkParam ? '#475569' : '#ccc'}`, color: isDarkParam ? '#fff' : '#000' }} />
                   <Legend />
-                  <Bar dataKey="behavior.positive" fill="#10b981" name="Pozitív" />
-                  <Bar dataKey="behavior.negative" fill="#ef4444" name="Negatív" />
+                  <Bar dataKey="behavior.positive" fill="#10b981" name="Pozitív" animationDuration={600} />
+                  <Bar dataKey="behavior.negative" fill="#ef4444" name="Negatív" animationDuration={600} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -293,21 +255,22 @@ export default function AdminStatistics() {
   )
 }
 
-function StatCard({ title, value, color = 'blue', isDark }: any) {
-  const colors = {
-    blue: { light: '#eff6ff', dark: '#1e3a8a', border: isDark ? '#1e40af' : '#bfdbfe' },
-    green: { light: '#f0fdf4', dark: '#15803d', border: isDark ? '#16a34a' : '#bbf7d0' },
-    red: { light: '#fef2f2', dark: '#7f1d1d', border: isDark ? '#dc2626' : '#fecaca' },
-    orange: { light: '#fff7ed', dark: '#92400e', border: isDark ? '#ea580c' : '#fed7aa' },
-    purple: { light: '#faf5ff', dark: '#581c87', border: isDark ? '#a855f7' : '#e9d5ff' },
-    pink: { light: '#fdf2f8', dark: '#831843', border: isDark ? '#ec4899' : '#fbcfe8' }
+function StatCard({ title, value, color = 'blue' }: any) {
+  const colorClasses: Record<string, string> = {
+    blue: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800',
+    green: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800',
+    red: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800',
+    orange: 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800',
+    purple: 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800',
+    pink: 'bg-pink-50 dark:bg-pink-900/20 border-pink-200 dark:border-pink-800'
   }
-  const c = colors[color as keyof typeof colors]
 
   return (
-    <div style={{ backgroundColor: isDark ? c.dark : c.light, borderColor: c.border, border: '1px solid', borderRadius: '1rem', padding: '0.75rem 1rem', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' }}>
-      <p className="text-xs sm:text-sm" style={{ color: isDark ? '#d1d5db' : '#6b7280' }}>{title}</p>
-      <p className="text-xl sm:text-3xl font-bold mt-1 sm:mt-2" style={{ color: isDark ? '#fff' : '#000' }}>{value}</p>
-    </div>
+    <Card className={`border ${colorClasses[color]} dark:bg-slate-800`}>
+      <CardContent className="p-4">
+        <p className="text-xs text-gray-600 dark:text-gray-400">{title}</p>
+        <p className="text-2xl font-bold mt-1 dark:text-white">{value}</p>
+      </CardContent>
+    </Card>
   )
 }

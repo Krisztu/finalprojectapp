@@ -3610,7 +3610,7 @@ export default function Dashboard() {
           {userRole === 'admin' && (
             <TabsContent value="admin-statistics" className="space-y-3 sm:space-y-6">
               <iframe
-                src="/admin/statistics"
+                src={`/admin/statistics?dark=${darkMode}`}
                 className="w-full h-screen border-0 rounded-lg"
                 title="Admin Statisztikák"
               />
