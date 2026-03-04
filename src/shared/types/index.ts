@@ -4,10 +4,17 @@ export interface User {
     name?: string
     fullName?: string
     email: string
-    role: 'student' | 'teacher' | 'homeroom_teacher' | 'admin' | 'dj'
+    role: 'student' | 'teacher' | 'homeroom_teacher' | 'admin' | 'principal' | 'parent' | 'dj'
     class?: string
     classes?: string[]
     profileImage?: string
+    studentId?: string
+    children?: string[]
+    phone?: string
+    address?: string
+    subject?: string
+    createdAt?: Date
+    updatedAt?: Date
 }
 
 export interface Lesson {
@@ -102,4 +109,46 @@ export interface MusicRequest {
     userClass: string
     status: 'pending' | 'played' | 'rejected'
     createdAt: string | Date
+}
+
+export interface BehaviorRecord {
+    id?: string
+    studentId: string
+    studentName: string
+    studentClass: string
+    type: 'dicseret' | 'figyelmezetes'
+    level: 'szaktanari' | 'osztalyfonoki' | 'igazgatoi'
+    description: string
+    reason: string
+    recordedBy: string
+    recordedByName: string
+    recordedByRole: 'teacher' | 'homeroom_teacher' | 'principal'
+    createdAt: Date
+    parentNotified?: boolean
+    actionTaken?: string
+}
+
+export interface BehaviorSummary {
+    studentId: string
+    dicseretCount: number
+    szaktanariDicseret: number
+    osztalyfonokiDicseret: number
+    igazgatoiDicseret: number
+    figyelmeztetesCount: number
+    szaktanariFigyelmezetes: number
+    osztalyfonokiFigyelmezetes: number
+    igazgatoiFigyelmezetes: number
+    updatedAt: Date
+}
+
+export interface ParentChild {
+    id?: string
+    parentId: string
+    childId: string
+    childName: string
+    childClass: string
+    childStudentId: string
+    relationship: 'anya' | 'apa' | 'gyam' | 'egyeb'
+    linkedAt: Date
+    verified: boolean
 }

@@ -68,6 +68,7 @@ export default function Dashboard() {
   const [teacherForm, setTeacherForm] = useState({ email: '', password: '', fullName: '', subject: '', classes: [] as string[], isHomeroom: false, homeroomClass: '' })
   const [selectedSubjects, setSelectedSubjects] = useState<string[]>([])
   const [studentForm, setStudentForm] = useState({ email: '', password: '', fullName: '', studentId: '', class: '', isDJ: false })
+  const [parentForm, setParentForm] = useState({ email: '', password: '', fullName: '', phone: '', address: '', childStudentId: '', relationship: '' })
   const [scheduleChangeForm, setScheduleChangeForm] = useState({
     teacherId: '',
     date: '',
@@ -1025,8 +1026,11 @@ export default function Dashboard() {
                 <span className="text-xs text-muted-foreground">
                   {userRole === 'dj' && 'DJ'}
                   {userRole === 'teacher' && 'Tanár'}
+                  {userRole === 'homeroom_teacher' && 'Osztályfőnök'}
                   {userRole === 'admin' && 'Admin'}
                   {userRole === 'student' && 'Diák'}
+                  {userRole === 'principal' && 'Igazgató'}
+                  {userRole === 'parent' && 'Szülő'}
                 </span>
               </div>
               <Button variant="destructive" size="sm" onClick={handleLogout} className="rounded-full shadow-md text-xs sm:text-sm px-2 sm:px-4">
@@ -1050,6 +1054,7 @@ export default function Dashboard() {
             {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="homework" className="text-sm whitespace-nowrap px-4">Házifeladat</TabsTrigger>}
             {userRole === 'teacher' && <TabsTrigger value="teacher-absences" className="text-sm whitespace-nowrap px-4">Mulasztások</TabsTrigger>}
             {userRole === 'teacher' && <TabsTrigger value="teacher-homework" className="text-sm whitespace-nowrap px-4">Házifeladat</TabsTrigger>}
+            {userRole === 'teacher' && <TabsTrigger value="teacher-behavior" className="text-sm whitespace-nowrap px-4">Viselkedés</TabsTrigger>}
             {(currentUser?.role === 'homeroom_teacher') && <TabsTrigger value="class-excuses" className="text-sm whitespace-nowrap px-4">Igazolások</TabsTrigger>}
             {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="student-excuses" className="text-sm whitespace-nowrap px-4">Igazolás</TabsTrigger>}
             {userRole !== 'admin' && <TabsTrigger value="radio" className="text-sm whitespace-nowrap px-4">Rádió</TabsTrigger>}
@@ -1057,7 +1062,7 @@ export default function Dashboard() {
             {userRole !== 'teacher' && userRole !== 'admin' && <TabsTrigger value="qr" className="text-sm whitespace-nowrap px-4">QR</TabsTrigger>}
             {userRole === 'admin' && <TabsTrigger value="admin-schedule" className="text-sm whitespace-nowrap px-4">Órarend</TabsTrigger>}
             {userRole === 'admin' && <TabsTrigger value="admin-grades" className="text-sm whitespace-nowrap px-4">Jegyek</TabsTrigger>}
-            {userRole === 'admin' && <TabsTrigger value="admin-users" className="text-sm whitespace-nowrap px-4">Userek</TabsTrigger>}
+            {userRole === 'admin' && <TabsTrigger value="admin-users" className="text-sm whitespace-nowrap px-4">Felhasználók</TabsTrigger>}
             {userRole === 'admin' && <TabsTrigger value="admin-statistics" className="text-sm whitespace-nowrap px-4">Statisztikák</TabsTrigger>}
             <TabsTrigger value="profile" className="text-sm whitespace-nowrap px-4">Profil</TabsTrigger>
           </TabsList>
@@ -1092,6 +1097,7 @@ export default function Dashboard() {
                 {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="homework" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><FileText className="h-4 w-4" /> Házifeladat</TabsTrigger>}
                 {userRole === 'teacher' && <TabsTrigger value="teacher-absences" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><ClipboardList className="h-4 w-4" /> Mulasztások</TabsTrigger>}
                 {userRole === 'teacher' && <TabsTrigger value="teacher-homework" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><FileText className="h-4 w-4" /> Házifeladat</TabsTrigger>}
+                {userRole === 'teacher' && <TabsTrigger value="teacher-behavior" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><AlertCircle className="h-4 w-4" /> Viselkedés</TabsTrigger>}
                 {(currentUser?.role === 'homeroom_teacher') && <TabsTrigger value="class-excuses" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><CheckCircle className="h-4 w-4" /> Igazolások</TabsTrigger>}
                 {(userRole === 'student' || userRole === 'dj') && <TabsTrigger value="student-excuses" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><CheckCircle className="h-4 w-4" /> Igazolás</TabsTrigger>}
                 {userRole !== 'admin' && <TabsTrigger value="radio" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><Radio className="h-4 w-4" /> Rádió</TabsTrigger>}
@@ -1099,7 +1105,7 @@ export default function Dashboard() {
                 {userRole !== 'teacher' && userRole !== 'admin' && <TabsTrigger value="qr" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><Smartphone className="h-4 w-4" /> QR</TabsTrigger>}
                 {userRole === 'admin' && <TabsTrigger value="admin-schedule" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><CalendarDays className="h-4 w-4" /> Órarend</TabsTrigger>}
                 {userRole === 'admin' && <TabsTrigger value="admin-grades" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><BarChart3 className="h-4 w-4" /> Jegyek</TabsTrigger>}
-                {userRole === 'admin' && <TabsTrigger value="admin-users" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><Users className="h-4 w-4" /> Userek</TabsTrigger>}
+                {userRole === 'admin' && <TabsTrigger value="admin-users" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><Users className="h-4 w-4" /> Felhasználók</TabsTrigger>}
                 {userRole === 'admin' && <TabsTrigger value="admin-statistics" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none border-b border-white/10 hover:bg-white/5 transition-colors flex items-center gap-2"><BarChart3 className="h-4 w-4" /> Statisztikák</TabsTrigger>}
                 <TabsTrigger value="profile" onClick={() => setMobileMenuOpen(false)} className="w-full justify-start text-left px-4 py-3 rounded-none hover:bg-white/5 transition-colors flex items-center gap-2"><UserIcon className="h-4 w-4" /> Profil</TabsTrigger>
               </TabsList>
@@ -2444,7 +2450,7 @@ export default function Dashboard() {
 
           {userRole === 'admin' && (
             <TabsContent value="admin-users" className="space-y-3 sm:space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-6">
                 <Card className="border-none shadow-sm">
                   <CardHeader className="p-3 sm:p-6">
                     <CardTitle className="text-sm sm:text-lg">Tanár regisztráció</CardTitle>
@@ -2458,7 +2464,7 @@ export default function Dashboard() {
                           value={teacherForm.email}
                           onChange={(e) => setTeacherForm({ ...teacherForm, email: e.target.value })}
                           className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm"
-                          placeholder="tanar@gszi.hu"
+                          placeholder="tanar@lumine.edu.hu"
                         />
                       </div>
                       <div>
@@ -2620,7 +2626,7 @@ export default function Dashboard() {
                           value={studentForm.email}
                           onChange={(e) => setStudentForm({ ...studentForm, email: e.target.value })}
                           className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm"
-                          placeholder="diak@gszi.hu"
+                          placeholder="diak@lumine.edu.hu"
                         />
                       </div>
                       <div>
@@ -2721,6 +2727,134 @@ export default function Dashboard() {
                     </Button>
                   </CardContent>
                 </Card>
+
+                <Card className="border-none shadow-sm">
+                  <CardHeader className="p-3 sm:p-6">
+                    <CardTitle className="text-sm sm:text-lg">Szülő regisztráció</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3 sm:space-y-4 p-3 sm:p-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Email</label>
+                        <input
+                          type="email"
+                          value={parentForm.email}
+                          onChange={(e) => setParentForm({ ...parentForm, email: e.target.value })}
+                          className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm"
+                          placeholder="szulo@lumine.edu.hu"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Jelszó</label>
+                        <input
+                          type="password"
+                          value={parentForm.password}
+                          onChange={(e) => setParentForm({ ...parentForm, password: e.target.value })}
+                          className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm"
+                          placeholder="min. 6 karakter"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Teljes név</label>
+                      <input
+                        type="text"
+                        value={parentForm.fullName}
+                        onChange={(e) => setParentForm({ ...parentForm, fullName: e.target.value })}
+                        className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm"
+                        placeholder="Szülő Név"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Telefonszám</label>
+                      <input
+                        type="tel"
+                        value={parentForm.phone}
+                        onChange={(e) => setParentForm({ ...parentForm, phone: e.target.value })}
+                        className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm"
+                        placeholder="+36 30 123 4567"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Cím</label>
+                      <input
+                        type="text"
+                        value={parentForm.address}
+                        onChange={(e) => setParentForm({ ...parentForm, address: e.target.value })}
+                        className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm"
+                        placeholder="Város, utca, házszám"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Gyermek OM azonosítója</label>
+                        <input
+                          type="text"
+                          value={parentForm.childStudentId}
+                          onChange={(e) => setParentForm({ ...parentForm, childStudentId: e.target.value })}
+                          className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm"
+                          placeholder="pl. 12345678901"
+                          maxLength={11}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Kapcsolat típusa</label>
+                        <select
+                          value={parentForm.relationship}
+                          onChange={(e) => setParentForm({ ...parentForm, relationship: e.target.value })}
+                          className="w-full p-2 border border-gray-300 rounded-md dark:bg-gray-700 dark:border-gray-600 text-sm"
+                        >
+                          <option value="">Válassz...</option>
+                          <option value="anya">Anya</option>
+                          <option value="apa">Apa</option>
+                          <option value="gyam">Gyám</option>
+                          <option value="egyeb">Egyéb</option>
+                        </select>
+                      </div>
+                    </div>
+                    <Button
+                      onClick={async () => {
+                        if (parentForm.email && parentForm.password && parentForm.fullName) {
+                          try {
+                            const response = await fetch('/api/auth/register', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                email: parentForm.email,
+                                password: parentForm.password,
+                                fullName: parentForm.fullName,
+                                role: 'parent',
+                                phone: parentForm.phone,
+                                address: parentForm.address,
+                                childStudentId: parentForm.childStudentId,
+                                relationship: parentForm.relationship,
+                                children: []
+                              })
+                            })
+
+                            if (response.ok) {
+                              showAlert(`Szülő regisztrálva: ${parentForm.fullName}`, 'success')
+                              setParentForm({ email: '', password: '', fullName: '', phone: '', address: '', childStudentId: '', relationship: '' })
+                              loadAllUsers()
+                            } else {
+                              const error = await response.json()
+                              showAlert(`Hiba: ${error.error || 'Ismeretlen hiba'}`, 'error')
+                            }
+                          } catch (error) {
+                            showAlert('Hiba történt', 'error')
+                          }
+                        } else {
+                          showAlert('Töltsd ki az összes kötelező mezőt!', 'warning')
+                        }
+                      }}
+                      className="w-full bg-purple-600 hover:bg-purple-700 flex items-center justify-center gap-2"
+                      size="sm"
+                    >
+                      <UserIcon className="h-4 w-4" />
+                      Szülő regisztrálása
+                    </Button>
+                  </CardContent>
+                </Card>
               </div>
 
               <Card className="border-none shadow-sm">
@@ -2751,8 +2885,10 @@ export default function Dashboard() {
                       >
                         <option value="">Összes szerepkör</option>
                         <option value="admin">Admin</option>
+                        <option value="principal">Igazgató</option>
                         <option value="teacher">Tanár</option>
                         <option value="homeroom_teacher">Osztályfőnök</option>
+                        <option value="parent">Szülő</option>
                         <option value="student">Diák</option>
                         <option value="dj">DJ</option>
                       </select>
@@ -2782,15 +2918,19 @@ export default function Dashboard() {
                             {user.subject && <p className="text-xs text-green-600 dark:text-green-400">Tantárgy: {user.subject}</p>}
                             <p className="text-xs text-gray-400">Firebase ID: {user.id || 'Nincs ID'}</p>
                             <span className={`inline-block px-2 py-1 rounded text-xs ${user.role === 'admin' ? 'bg-red-100 text-red-800' :
-                              user.role === 'teacher' ? 'bg-purple-100 text-purple-800' :
-                                user.role === 'homeroom_teacher' ? 'bg-indigo-100 text-indigo-800' :
-                                  user.role === 'dj' ? 'bg-yellow-100 text-yellow-800' :
-                                    'bg-green-100 text-green-800'
+                              user.role === 'principal' ? 'bg-orange-100 text-orange-800' :
+                                user.role === 'teacher' ? 'bg-purple-100 text-purple-800' :
+                                  user.role === 'homeroom_teacher' ? 'bg-indigo-100 text-indigo-800' :
+                                    user.role === 'parent' ? 'bg-pink-100 text-pink-800' :
+                                      user.role === 'dj' ? 'bg-yellow-100 text-yellow-800' :
+                                        'bg-green-100 text-green-800'
                               }`}>
                               {user.role === 'admin' ? 'Admin' :
-                                user.role === 'teacher' ? 'Tanár' :
-                                  user.role === 'homeroom_teacher' ? 'Osztályfőnök' :
-                                    user.role === 'dj' ? 'DJ' : 'Diák'}
+                                user.role === 'principal' ? 'Igazgató' :
+                                  user.role === 'teacher' ? 'Tanár' :
+                                    user.role === 'homeroom_teacher' ? 'Osztályfőnök' :
+                                      user.role === 'parent' ? 'Szülő' :
+                                        user.role === 'dj' ? 'DJ' : 'Diák'}
                             </span>
                           </div>
                           <div className="flex gap-1">
@@ -2865,6 +3005,8 @@ export default function Dashboard() {
                               <option value="teacher">Tanár</option>
                               <option value="homeroom_teacher">Osztályfőnök</option>
                               <option value="dj">DJ</option>
+                              <option value="parent">Szülő</option>
+                              <option value="principal">Igazgató</option>
                               <option value="admin">Admin</option>
                             </select>
                             {user.id && (

@@ -32,6 +32,42 @@ export async function POST(request: NextRequest) {
     } else if (role === 'student' || role === 'dj') {
       userData.studentId = studentId || ''
       userData.class = userClass || '12.A'
+    } else if (role === 'parent') {
+      userData.children = []
+      userData.phone = body.phone || ''
+      userData.address = body.address || ''
+      userData.childrenStudentIds = body.childStudentId ? [body.childStudentId] : []
+      
+      // Gyermek hozzáadása regisztráció során
+      if (body.childStudentId) {
+        try {
+          const childQuery = adminDb.collection('users')
+            .where('studentId', '==', body.childStudentId)
+            .where('role', 'in', ['student', 'dj'])
+          
+          const childSnapshot = await childQuery.get()
+          if (!childSnapshot.empty) {
+            const childDoc = childSnapshot.docs[0]
+            userData.children = [childDoc.id]
+            
+            // Parent-child kapcsolat létrehozása
+            await adminDb.collection('parent_children').doc(`${user.uid}__${childDoc.id}`).set({
+              parentId: user.uid,
+              childId: childDoc.id,
+              childName: childDoc.data().fullName || childDoc.data().name,
+              childClass: childDoc.data().class,
+              childStudentId: body.childStudentId,
+              relationship: body.relationship || 'egyeb',
+              linkedAt: new Date().toISOString(),
+              verified: true
+            })
+          }
+        } catch (error) {
+          console.error('Child linking failed:', error)
+        }
+      }
+    } else if (role === 'principal') {
+      // Principal has no additional fields
     }
 
     await adminDb.collection('users').doc(user.uid).set(userData)

@@ -43,7 +43,7 @@ service cloud.firestore {
 
     
     function isValidRole(role) {
-      return role in ['admin', 'teacher', 'homeroom_teacher', 'student', 'dj'];
+      return role in ['admin', 'teacher', 'homeroom_teacher', 'student', 'dj', 'parent', 'principal'];
     }
 
     function isValidGrade(grade) {
@@ -318,6 +318,26 @@ service cloud.firestore {
 
       
       allow create: if isAdmin();
+
+      
+      allow update: if isAdmin();
+
+      
+      allow delete: if isAdmin();
+    }
+
+    match /parent_children/{docId} {
+      
+      allow read: if isAuthenticated() && 
+                     (request.auth.uid == resource.data.parentId || 
+                      request.auth.uid == resource.data.childId ||
+                      isAdmin());
+
+      
+      allow create: if isAdmin() &&
+                       request.resource.data.parentId is string &&
+                       request.resource.data.childId is string &&
+                       request.resource.data.relationship is string;
 
       
       allow update: if isAdmin();

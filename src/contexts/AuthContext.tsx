@@ -11,6 +11,7 @@ interface AuthContextType {
   signUp: (email: string, password: string) => Promise<UserCredential>
   logout: () => Promise<void>
   error: string | null
+  role: string | null
 }
 
 const AuthContext = createContext<AuthContextType>({} as AuthContextType)
@@ -19,17 +20,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
+  const [role, setRole] = useState<string | null>(null)
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {
-          await user.getIdToken(true)
+          const token = await user.getIdToken(true)
+          const decodedToken = JSON.parse(atob(token.split('.')[1]))
+          setRole(decodedToken.role || null)
           console.log('Bejelentkezés sikeres')
         } catch (error) {
           console.log('Token frissítés hiba')
         }
       } else {
+        setRole(null)
         console.log('Kijelentkezés')
       }
       setUser(user)
@@ -40,7 +45,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
     return unsubscribe
   }, [])
-
   const signIn = async (email: string, password: string) => {
     try {
       setError(null)
@@ -74,7 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signUp, logout, error }}>
+    <AuthContext.Provider value={{ user, loading, signIn, signUp, logout, error, role }}>
       {children}
     </AuthContext.Provider>
   )
